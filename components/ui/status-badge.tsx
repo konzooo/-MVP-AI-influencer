@@ -111,25 +111,21 @@ export function StatusBadge({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
-            className="focus:outline-none"
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-pointer text-[9px] transition-colors hover:brightness-125",
+              config.className,
+              className
+            )}
             onClick={(e) => e.stopPropagation()}
           >
-            <Badge
-              variant="outline"
-              className={cn(
-                "cursor-pointer text-[9px] transition-colors hover:brightness-125",
-                config.className,
-                className
-              )}
-            >
-              {status === "ready" && (
-                <CheckCircle2 className="mr-0.5 h-2.5 w-2.5" />
-              )}
-              {config.label}
-              <ChevronDown className="ml-0.5 h-2.5 w-2.5 opacity-50" />
-            </Badge>
-          </button>
+            {status === "ready" && (
+              <CheckCircle2 className="mr-0.5 h-2.5 w-2.5" />
+            )}
+            {config.label}
+            <ChevronDown className="ml-0.5 h-2.5 w-2.5 opacity-50" />
+          </Badge>
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"

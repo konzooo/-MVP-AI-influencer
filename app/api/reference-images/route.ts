@@ -57,7 +57,8 @@ export async function GET() {
           const referenceImage: ReferenceImage = {
             id: baseName,
             filename: imageFile,
-            imagePath: `/api/reference-images/${imageFile}`, // Use API route instead of file path
+            imagePath: `/api/reference-images/${imageFile}`,
+            thumbnailPath: `/api/reference-images/${imageFile}?w=300`,
             summary,
             tags,
             metadata: metadata || {

@@ -11,7 +11,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ArrowLeft, ChevronDown, ChevronRight, GripVertical, Hash, Send } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { ArrowLeft, ChevronDown, ChevronRight, GripVertical, Hash, Send, Pencil, Check, X } from "lucide-react";
 
 interface PostDetailProps {
   post: PostPlan;
@@ -105,36 +107,7 @@ export function PostDetail({ post, onBack, onUpdate }: PostDetailProps) {
       <div className="flex-1 overflow-auto bg-zinc-950 p-6">
         <div className="mx-auto max-w-5xl space-y-6">
           {/* Post info */}
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
-            <h3 className="mb-3 text-xs font-medium text-zinc-400">Post Details</h3>
-
-            {post.description && (
-              <div className="mb-3">
-                <p className="text-sm text-zinc-300">{post.description}</p>
-              </div>
-            )}
-
-            {post.caption && (
-              <div className="mb-3">
-                <p className="text-xs font-medium text-zinc-500">Caption</p>
-                <p className="mt-1 text-sm text-zinc-300">{post.caption}</p>
-              </div>
-            )}
-
-            {post.hashtags.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {post.hashtags.map((tag, i) => (
-                  <span
-                    key={i}
-                    className="inline-flex items-center gap-1 text-xs text-violet-400/80"
-                  >
-                    <Hash className="h-3 w-3" />
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+          <PostDetailsSection post={post} onUpdate={onUpdate} />
 
           {/* Selected images (for posting) */}
           {selectedCount > 0 && (
@@ -252,6 +225,147 @@ export function PostDetail({ post, onBack, onUpdate }: PostDetailProps) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PostDetailsSection({
+  post,
+  onUpdate,
+}: {
+  post: PostPlan;
+  onUpdate: (post: PostPlan) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [title, setTitle] = useState(post.title);
+  const [description, setDescription] = useState(post.description);
+  const [caption, setCaption] = useState(post.caption);
+  const [hashtagsText, setHashtagsText] = useState(post.hashtags.join(", "));
+
+  const handleSave = () => {
+    onUpdate({
+      ...post,
+      title,
+      description,
+      caption,
+      hashtags: hashtagsText
+        .split(",")
+        .map((t) => t.trim().replace(/^#/, ""))
+        .filter(Boolean),
+      updatedAt: new Date().toISOString(),
+    });
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setTitle(post.title);
+    setDescription(post.description);
+    setCaption(post.caption);
+    setHashtagsText(post.hashtags.join(", "));
+    setIsEditing(false);
+  };
+
+  if (isEditing) {
+    return (
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-medium text-zinc-400">Post Details</h3>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" onClick={handleCancel} className="h-7 px-2 text-zinc-400">
+              <X className="h-3.5 w-3.5" />
+            </Button>
+            <Button size="sm" onClick={handleSave} className="h-7 gap-1.5 px-2.5">
+              <Check className="h-3.5 w-3.5" />
+              Save
+            </Button>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-zinc-500">Title</label>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="mt-1"
+            placeholder="Post title"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-zinc-500">Description</label>
+          <Textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="mt-1 min-h-20"
+            placeholder="Post description"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-zinc-500">Caption</label>
+          <Textarea
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            className="mt-1 min-h-20"
+            placeholder="Instagram caption"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-zinc-500">Hashtags</label>
+          <Input
+            value={hashtagsText}
+            onChange={(e) => setHashtagsText(e.target.value)}
+            className="mt-1"
+            placeholder="tag1, tag2, tag3"
+          />
+          <p className="mt-1 text-[10px] text-zinc-600">Separate with commas, # is optional</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-medium text-zinc-400">Post Details</h3>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setIsEditing(true)}
+          className="h-7 gap-1.5 px-2 text-zinc-500 hover:text-zinc-300"
+        >
+          <Pencil className="h-3 w-3" />
+          Edit
+        </Button>
+      </div>
+
+      {post.description && (
+        <div className="mb-3">
+          <p className="text-sm text-zinc-300">{post.description}</p>
+        </div>
+      )}
+
+      {post.caption && (
+        <div className="mb-3">
+          <p className="text-xs font-medium text-zinc-500">Caption</p>
+          <p className="mt-1 text-sm text-zinc-300">{post.caption}</p>
+        </div>
+      )}
+
+      {post.hashtags.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {post.hashtags.map((tag, i) => (
+            <span
+              key={i}
+              className="inline-flex items-center gap-1 text-xs text-violet-400/80"
+            >
+              <Hash className="h-3 w-3" />
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

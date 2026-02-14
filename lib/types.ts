@@ -98,6 +98,7 @@ export interface ReferenceImage {
   id: string;
   filename: string;
   imagePath: string;
+  thumbnailPath: string;
   summary: string;
   tags: string[];
   metadata: ReferenceImageMetadata;

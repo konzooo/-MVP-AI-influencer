@@ -23,7 +23,7 @@ export function ReferenceLibraryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] h-[90vh] max-w-none p-0 gap-0 flex flex-col overflow-hidden">
+      <DialogContent className="w-[92vw] h-[88vh] max-w-none sm:max-w-none p-0 gap-0 flex flex-col overflow-hidden border-zinc-800">
         <VisuallyHidden>
           <DialogTitle>Choose Reference Images</DialogTitle>
         </VisuallyHidden>

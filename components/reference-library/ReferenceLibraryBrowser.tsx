@@ -140,6 +140,7 @@ export function ReferenceLibraryBrowser({
     }
   };
 
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -167,7 +168,7 @@ export function ReferenceLibraryBrowser({
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full w-full flex-col overflow-hidden">
       {/* Header */}
       {showHeader && (
         <div className="border-b border-zinc-800 px-6 py-4">
@@ -189,42 +190,39 @@ export function ReferenceLibraryBrowser({
                     {selectedImages.size} selected
                   </span>
                 )}
-                {!defaultSelectionMode && (
-                  <Button
-                    onClick={toggleSelectionMode}
-                    variant={selectionMode ? "default" : "outline"}
-                    size="sm"
-                  >
-                    {selectionMode ? "Done Selecting" : "Select Images"}
-                  </Button>
-                )}
-                {defaultSelectionMode && onImagesSelected && (
-                  <Button
-                    onClick={handleConfirmSelection}
-                    disabled={selectedImages.size === 0}
-                    size="sm"
-                  >
-                    Add {selectedImages.size > 0 && `${selectedImages.size} `}
-                    image{selectedImages.size !== 1 ? "s" : ""}
-                  </Button>
-                )}
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Filters */}
-      <ReferenceLibraryFilters
-        filters={filters}
-        onFiltersChange={setFilters}
-        totalImages={images.length}
-        filteredCount={filteredImages.length}
-      />
-
-      {/* Image Grid */}
-      <ScrollArea className="flex-1">
+      {/* Scrollable content - filters, button, and grid */}
+      <ScrollArea className="flex-1 min-h-0">
         <div className="p-6">
+          {/* Filters */}
+          <div className="mb-6">
+            <ReferenceLibraryFilters
+              filters={filters}
+              onFiltersChange={setFilters}
+              totalImages={images.length}
+              filteredCount={filteredImages.length}
+            />
+          </div>
+
+          {/* Confirmation button - only in modal, positioned above grid */}
+          {defaultSelectionMode && onImagesSelected && (
+            <div className="mb-4 flex justify-end">
+              <Button
+                onClick={handleConfirmSelection}
+                disabled={selectedImages.size === 0}
+                size="sm"
+              >
+                Add {selectedImages.size > 0 && `${selectedImages.size} `}
+                image{selectedImages.size !== 1 ? "s" : ""}
+              </Button>
+            </div>
+          )}
+
           {filteredImages.length === 0 ? (
             <div className="flex h-64 items-center justify-center">
               <div className="text-center">
@@ -252,13 +250,13 @@ export function ReferenceLibraryBrowser({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7">
+            <div className={defaultSelectionMode ? "grid auto-rows-max grid-cols-6 gap-3" : "grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7"}>
               {filteredImages.map((image) => (
                 <ReferenceImageCard
                   key={image.id}
                   image={image}
                   onSelect={handleImageSelect}
-                  selectable={selectionMode}
+                  selectable={defaultSelectionMode}
                   selected={selectedImages.has(image.id)}
                 />
               ))}
