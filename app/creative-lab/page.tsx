@@ -329,7 +329,7 @@ export default function CreativeLabPage() {
     <div className="mx-auto max-w-4xl p-6">
       {/* Header */}
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-zinc-100">Creative Lab</h2>
+        <h2 className="text-xl font-semibold text-zinc-100">Ideation</h2>
         <p className="mt-1 text-sm text-zinc-500">
           Brainstorm post ideas, analyze reference images, and plan your
           content.

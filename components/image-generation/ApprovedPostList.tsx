@@ -24,7 +24,7 @@ export function ApprovedPostList({
         <ImageIcon className="mb-3 h-8 w-8 text-zinc-700" />
         <p className="text-sm font-medium text-zinc-500">No approved posts</p>
         <p className="mt-1 text-xs text-zinc-600">
-          Approve posts in the Creative Lab to see them here.
+          Approve posts in Ideation to see them here.
         </p>
       </div>
     );

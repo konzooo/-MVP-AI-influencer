@@ -78,7 +78,7 @@ export default function ImageGenerationPage() {
               variant="outline"
               onClick={handleCreateNew}
               className="h-7 gap-1 border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-              title="Create a new post directly here without planning in Creative Lab"
+              title="Create a new post directly here without planning in Ideation"
             >
               <Plus className="h-3 w-3" />
               New
@@ -112,7 +112,7 @@ export default function ImageGenerationPage() {
               Select a post to start generating
             </h3>
             <p className="mt-1 max-w-sm text-xs text-zinc-600">
-              Approve posts in the Creative Lab first. Then select one from the
+              Approve posts in Ideation first. Then select one from the
               list on the left to open the generation workspace.
             </p>
           </div>

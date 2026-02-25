@@ -18,7 +18,7 @@ import { InstagramAccountDialog } from "@/components/post-manager/InstagramAccou
 
 const navItems = [
   {
-    label: "Creative Lab",
+    label: "Ideation",
     href: "/creative-lab",
     icon: Lightbulb,
     step: 1,
