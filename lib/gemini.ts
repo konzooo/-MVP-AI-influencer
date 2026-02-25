@@ -14,7 +14,8 @@ Your job is to take rough ideas and turn them into complete, actionable post pla
 
 The user will provide a rough idea (text) and optionally reference/inspiration images. Flesh it out into a compelling post concept.
 
-IMPORTANT: The image generation prompt you write will be sent to Seedream 4.5, which supports multi-reference editing. When writing the prompt:
+IMPORTANT: The image generation prompt you write will be sent to an image generation model that supports multi-reference editing. When writing the prompt:
+- Do NOT include any model names (like "Seedream", "DALL-E", "Midjourney", etc.) in the prompt text itself
 - The user's character reference photo will be provided as "Figure 1" during image generation
 - Your prompt should describe the SCENE, POSE, COMPOSITION, LIGHTING, and MOOD in detail
 - Reference the character as "the character from Figure 1"
@@ -29,7 +30,7 @@ Return your response as valid JSON matching this exact structure:
   "hashtags": ["hashtag1", "hashtag2", ...],
   "imagePrompts": [
     {
-      "prompt": "Detailed scene/composition prompt for Seedream 4.5. Reference character as 'the character from Figure 1'. Describe pose, environment, lighting, clothing, mood — but NOT facial features or hair color."
+      "prompt": "Detailed scene/composition prompt. Reference character as 'the character from Figure 1'. Describe pose, environment, lighting, clothing, mood — but NOT facial features or hair color."
     }
   ],
   "notes": "Any additional notes, tips, or suggestions for the image generation step"
@@ -69,7 +70,7 @@ Return your response as valid JSON matching this exact structure:
   "hashtags": ["hashtag1", "hashtag2", ...],
   "imagePrompts": [
     {
-      "prompt": "Detailed recreation prompt for Seedream 4.5. Describes pose, environment, lighting, clothing, mood — references character as 'the character from Figure 1'. NO identity features.",
+      "prompt": "Detailed recreation prompt. Describes pose, environment, lighting, clothing, mood — references character as 'the character from Figure 1'. NO identity features.",
       "referenceImageAnalysis": "Detailed structured analysis of the source image: pose, environment, composition, lighting, mood, clothing, AND the original person's identity features (for transparency only, not used in generation)"
     }
   ],
@@ -110,7 +111,8 @@ interface GeminiPart {
 
 export async function brainstormWithGemini(
   req: BrainstormRequest,
-  apiKey: string
+  apiKey: string,
+  personaContext?: string
 ) {
   const parts: GeminiPart[] = [];
 
@@ -152,7 +154,10 @@ export async function brainstormWithGemini(
     throw new Error("Please provide an idea or upload an image");
   }
 
-  const systemPrompt = getSystemPrompt(req.creationMode);
+  let systemPrompt = getSystemPrompt(req.creationMode);
+  if (personaContext) {
+    systemPrompt = `${personaContext}\n\n${systemPrompt}`;
+  }
 
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -228,7 +233,8 @@ Return ONLY the JSON object, no markdown code blocks or extra text.`;
 export async function analyzeImagesWithGemini(
   images: string[], // base64 data URIs
   notes: string, // optional user notes about caption style, context, etc.
-  apiKey: string
+  apiKey: string,
+  personaContext?: string
 ) {
   const parts: GeminiPart[] = [];
 
@@ -253,6 +259,11 @@ export async function analyzeImagesWithGemini(
     }
   }
 
+  let systemPrompt = ANALYZE_OWN_IMAGES_PROMPT;
+  if (personaContext) {
+    systemPrompt = `${personaContext}\n\n${systemPrompt}`;
+  }
+
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
     {
@@ -260,11 +271,129 @@ export async function analyzeImagesWithGemini(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         systemInstruction: {
-          parts: [{ text: ANALYZE_OWN_IMAGES_PROMPT }],
+          parts: [{ text: systemPrompt }],
         },
         contents: [{ parts }],
         generationConfig: {
           temperature: 0.7,
+          responseMimeType: "application/json",
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error("Gemini API error details:", {
+      status: response.status,
+      statusText: response.statusText,
+      error,
+      url: response.url,
+    });
+    throw new Error(`Gemini API error: ${response.status} - ${error}`);
+  }
+
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  if (!text) {
+    throw new Error("No response from Gemini");
+  }
+
+  const result = JSON.parse(text);
+  return result;
+}
+
+// ─── Expand Own Image into Carousel ─────────────────────────────────────────
+
+const EXPAND_OWN_IMAGE_CAROUSEL_PROMPT = `${SHARED_PREAMBLE}
+
+The user has uploaded their own image that they want to use as the FIRST slide of an Instagram carousel. Your job is to:
+
+1. **Analyze the uploaded image** — understand the setting, mood, style, colors, lighting, clothing, pose, and overall vibe
+2. **Generate 3 companion image prompts** for slides 2, 3, and 4 that would create a cohesive, visually consistent carousel
+3. **Generate post details** — title, description, caption, hashtags
+
+Guidelines for companion prompts:
+- Each prompt should vary in pose, angle, or framing — but maintain the same overall mood, style, lighting, and setting
+- Think like a photographer doing a mini photoshoot: different angles of the same scene, or a natural progression
+- Reference the character as "the character from Figure 1"
+- Do NOT describe facial features, hair color, or identity traits — the character reference handles that
+- Describe: scene, pose, composition, lighting, mood, clothing, technical qualities
+- Keep the same clothing/outfit across all slides unless the vibe suggests otherwise
+
+Guidelines for captions:
+- Write in first person as the AI influencer
+- Be authentic, engaging, and conversational
+- Match the mood/vibe of the images
+- Include 2-4 lines with natural line breaks (use \\n)
+
+Return your response as valid JSON matching this exact structure:
+{
+  "title": "Descriptive title (e.g. 'Rooftop golden hour, casual vibes, 4-slide set')",
+  "description": "1-2 sentence description of the carousel concept",
+  "caption": "Instagram caption text (engaging, on-brand, with line breaks as \\n)",
+  "hashtags": ["hashtag1", "hashtag2", ...],
+  "imagePrompts": [
+    {
+      "prompt": "Detailed prompt for slide 2. Reference character as 'the character from Figure 1'. Describe pose, environment, lighting, clothing, mood."
+    },
+    {
+      "prompt": "Detailed prompt for slide 3. Reference character as 'the character from Figure 1'. Different angle/pose but same setting and mood."
+    },
+    {
+      "prompt": "Detailed prompt for slide 4. Reference character as 'the character from Figure 1'. Closing shot that completes the visual story."
+    }
+  ],
+  "notes": "Tips for maintaining visual consistency across the carousel"
+}
+
+Return ONLY the JSON object, no markdown code blocks or extra text.`;
+
+export async function expandOwnImageForCarousel(
+  image: string, // base64 data URI of the user's image
+  notes: string,
+  apiKey: string,
+  personaContext?: string
+) {
+  const parts: GeminiPart[] = [];
+
+  let userMessage = `I have 1 image that I want to use as the first slide of an Instagram carousel. Please analyze it and generate 3 companion image prompts for slides 2-4 that create a cohesive set.`;
+
+  if (notes.trim()) {
+    userMessage += `\n\nAdditional notes: ${notes}`;
+  }
+
+  parts.push({ text: userMessage });
+
+  // Add image
+  const match = image.match(/^data:(.+?);base64,(.+)$/);
+  if (match) {
+    parts.push({
+      inlineData: {
+        mimeType: match[1],
+        data: match[2],
+      },
+    });
+  }
+
+  let systemPrompt = EXPAND_OWN_IMAGE_CAROUSEL_PROMPT;
+  if (personaContext) {
+    systemPrompt = `${personaContext}\n\n${systemPrompt}`;
+  }
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: systemPrompt }],
+        },
+        contents: [{ parts }],
+        generationConfig: {
+          temperature: 0.8,
           responseMimeType: "application/json",
         },
       }),

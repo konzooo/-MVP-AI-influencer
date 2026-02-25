@@ -184,11 +184,24 @@ export function ReferenceLibraryBrowser({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                {selectionMode && selectedImages.size > 0 && (
-                  <span className="text-sm text-zinc-400">
-                    {selectedImages.size} selected
-                  </span>
+              <div className="flex items-center gap-3">
+                {selectionMode && (
+                  <>
+                    <span className={`text-sm ${selectedImages.size > 0 ? "text-zinc-300" : "text-zinc-600"}`}>
+                      {selectedImages.size > 0 ? `${selectedImages.size} selected` : "None selected"}
+                    </span>
+                    {defaultSelectionMode && onImagesSelected && (
+                      <Button
+                        onClick={handleConfirmSelection}
+                        disabled={selectedImages.size === 0}
+                        size="sm"
+                        className="bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-40"
+                      >
+                        Add {selectedImages.size > 0 && `${selectedImages.size} `}
+                        image{selectedImages.size !== 1 ? "s" : ""}
+                      </Button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -209,19 +222,7 @@ export function ReferenceLibraryBrowser({
             />
           </div>
 
-          {/* Confirmation button - only in modal, positioned above grid */}
-          {defaultSelectionMode && onImagesSelected && (
-            <div className="mb-4 flex justify-end">
-              <Button
-                onClick={handleConfirmSelection}
-                disabled={selectedImages.size === 0}
-                size="sm"
-              >
-                Add {selectedImages.size > 0 && `${selectedImages.size} `}
-                image{selectedImages.size !== 1 ? "s" : ""}
-              </Button>
-            </div>
-          )}
+          {/* Legacy confirmation button removed — now in header */}
 
           {filteredImages.length === 0 ? (
             <div className="flex h-64 items-center justify-center">

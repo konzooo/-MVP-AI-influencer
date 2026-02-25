@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, ChevronDown } from "lucide-react";
+import { CheckCircle2, ChevronDown, Clock, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const statusConfig: Record<
@@ -41,6 +41,14 @@ const statusConfig: Record<
     label: "Ready",
     className: "border-blue-700 bg-blue-950/50 text-blue-400",
   },
+  publishing: {
+    label: "Publishing",
+    className: "border-violet-700 bg-violet-950/50 text-violet-400 animate-pulse",
+  },
+  scheduled: {
+    label: "Scheduled",
+    className: "border-blue-700 bg-blue-950/50 text-blue-400",
+  },
   posted: {
     label: "Posted",
     className: "border-emerald-700 bg-emerald-950/50 text-emerald-400",
@@ -52,6 +60,8 @@ const ALL_STATUSES: PostStatus[] = [
   "approved",
   "generating",
   "ready",
+  "publishing",
+  "scheduled",
   "posted",
 ];
 
@@ -80,6 +90,12 @@ export function StatusBadge({
       >
         {status === "ready" && (
           <CheckCircle2 className="mr-0.5 h-2.5 w-2.5" />
+        )}
+        {status === "publishing" && (
+          <Loader2 className="mr-0.5 h-2.5 w-2.5 animate-spin" />
+        )}
+        {status === "scheduled" && (
+          <Clock className="mr-0.5 h-2.5 w-2.5" />
         )}
         {config.label}
       </Badge>
@@ -123,6 +139,12 @@ export function StatusBadge({
             {status === "ready" && (
               <CheckCircle2 className="mr-0.5 h-2.5 w-2.5" />
             )}
+            {status === "publishing" && (
+              <Loader2 className="mr-0.5 h-2.5 w-2.5 animate-spin" />
+            )}
+            {status === "scheduled" && (
+              <Clock className="mr-0.5 h-2.5 w-2.5" />
+            )}
             {config.label}
             <ChevronDown className="ml-0.5 h-2.5 w-2.5 opacity-50" />
           </Badge>
@@ -150,6 +172,8 @@ export function StatusBadge({
                     s === "approved" && "bg-amber-400",
                     s === "generating" && "bg-amber-400",
                     s === "ready" && "bg-blue-400",
+                    s === "publishing" && "bg-violet-400",
+                    s === "scheduled" && "bg-blue-400",
                     s === "posted" && "bg-emerald-400"
                   )}
                 />

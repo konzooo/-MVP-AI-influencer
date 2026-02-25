@@ -33,7 +33,10 @@ import {
   Plus,
   Eye,
   Wand2,
+  Lock,
+  ImageIcon,
 } from "lucide-react";
+import Image from "next/image";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 interface GenerationWorkspaceProps {
@@ -50,7 +53,7 @@ export function GenerationWorkspace({
     post.imagePrompts
   );
   const [settings, setSettings] = useState<GenerationControlsSettings>({
-    imageSize: "square_hd",
+    imageSize: "portrait_4_3",
     numVariations: 1,
     seed: "",
     maxImages: 1,
@@ -403,21 +406,27 @@ export function GenerationWorkspace({
           <div className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-950 px-5 pt-4">
             <div className="flex items-center gap-2">
               <TabsList className="bg-zinc-900">
-                {imagePrompts.map((_, i) => (
-                  <TabsTrigger
-                    key={i}
-                    value={String(i)}
-                    className="relative text-xs"
-                  >
-                    Image {i + 1}
-                    {generatingTab === i && (
-                      <span className="ml-1.5 flex h-1.5 w-1.5">
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-75"></span>
-                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-violet-500"></span>
-                      </span>
-                    )}
-                  </TabsTrigger>
-                ))}
+                {imagePrompts.map((_, i) => {
+                  const isUserProvided = post.generatedImages?.some(
+                    (img) => img.userProvided && img.promptIndex === i
+                  );
+                  return (
+                    <TabsTrigger
+                      key={i}
+                      value={String(i)}
+                      className="relative text-xs"
+                    >
+                      {isUserProvided && <Lock className="mr-1 h-3 w-3 text-emerald-400" />}
+                      Image {i + 1}
+                      {generatingTab === i && (
+                        <span className="ml-1.5 flex h-1.5 w-1.5">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-75"></span>
+                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-violet-500"></span>
+                        </span>
+                      )}
+                    </TabsTrigger>
+                  );
+                })}
               </TabsList>
               <Button
                 size="sm"
@@ -432,120 +441,157 @@ export function GenerationWorkspace({
           </div>
 
           {/* Tab contents */}
-          {imagePrompts.map((promptData, i) => (
-            <TabsContent
-              key={i}
-              value={String(i)}
-              className="mt-0 p-5 data-[state=inactive]:hidden"
-            >
-              <div className="space-y-5">
-                {/* Reference images: drag, upload, or paste */}
-                <ReferenceUploader
-                  images={promptData.referenceImages}
-                  onChange={(imgs) =>
-                    updatePrompt(i, { referenceImages: imgs })
-                  }
-                  acceptPaste={activeTab === String(i)}
-                />
+          {imagePrompts.map((promptData, i) => {
+            // Check if this tab has a user-provided image (locked, no generation needed)
+            const userProvidedImage = post.generatedImages?.find(
+              (img) => img.userProvided && img.promptIndex === i
+            );
 
-                <Separator className="bg-zinc-800" />
-
-                {/* Prompt editor */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-zinc-400">
-                      Prompt
-                    </label>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => openPromptHelper(i)}
-                      className="h-7 gap-1 text-xs text-violet-400 hover:bg-violet-950/30 hover:text-violet-300"
-                    >
-                      <Wand2 className="h-3 w-3" />
-                      Prompt Helper
-                    </Button>
+            return (
+              <TabsContent
+                key={i}
+                value={String(i)}
+                className="mt-0 p-5 data-[state=inactive]:hidden"
+              >
+                {userProvidedImage ? (
+                  /* ─── Locked user-provided image tab ─── */
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 rounded-md border border-emerald-800/50 bg-emerald-950/20 px-3 py-2">
+                      <Lock className="h-4 w-4 text-emerald-400" />
+                      <span className="text-sm font-medium text-emerald-300">
+                        Your image
+                      </span>
+                      <span className="text-xs text-zinc-500">
+                        — This is your uploaded image. It will be used as slide {i + 1} of the carousel.
+                      </span>
+                    </div>
+                    <div className="flex justify-center">
+                      <div className="relative max-w-md overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
+                        <Image
+                          src={userProvidedImage.url}
+                          alt="Your uploaded image"
+                          width={400}
+                          height={400}
+                          className="object-contain"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-center text-xs text-zinc-500">
+                      Generate companion images in the other tabs to complete your carousel.
+                    </p>
                   </div>
-                  <Textarea
-                    value={promptData.prompt}
-                    onChange={(e) => updatePrompt(i, { prompt: e.target.value })}
-                    placeholder="Describe what you want to generate. Reference uploaded images as Figure 1, Figure 2, etc."
-                    className="min-h-[100px] resize-y border-zinc-800 bg-zinc-900 font-mono text-xs leading-relaxed text-zinc-100 placeholder:text-zinc-600"
-                  />
-                </div>
-
-                {/* Image analysis (if available) */}
-                {promptData.referenceImageAnalysis && (
-                  <div className="rounded-md border border-zinc-800 bg-zinc-950/50">
-                    <button
-                      onClick={() =>
-                        setExpandedAnalysis((prev) => ({
-                          ...prev,
-                          [i]: !prev[i],
-                        }))
+                ) : (
+                  /* ─── Normal generation tab ─── */
+                  <div className="space-y-5">
+                    {/* Reference images: drag, upload, or paste */}
+                    <ReferenceUploader
+                      images={promptData.referenceImages}
+                      onChange={(imgs) =>
+                        updatePrompt(i, { referenceImages: imgs })
                       }
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-zinc-400 transition-colors hover:text-zinc-300"
-                    >
-                      {expandedAnalysis[i] ? (
-                        <ChevronDown className="h-3 w-3" />
-                      ) : (
-                        <ChevronRight className="h-3 w-3" />
-                      )}
-                      <Eye className="h-3 w-3" />
-                      Reference Image Analysis
-                    </button>
-                    {expandedAnalysis[i] && (
-                      <div className="whitespace-pre-wrap border-t border-zinc-800 px-3 py-2.5 text-xs leading-relaxed text-zinc-500">
-                        {promptData.referenceImageAnalysis}
+                      acceptPaste={activeTab === String(i)}
+                    />
+
+                    <Separator className="bg-zinc-800" />
+
+                    {/* Prompt editor */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-zinc-400">
+                          Prompt
+                        </label>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => openPromptHelper(i)}
+                          className="h-7 gap-1 text-xs text-violet-400 hover:bg-violet-950/30 hover:text-violet-300"
+                        >
+                          <Wand2 className="h-3 w-3" />
+                          Prompt Helper
+                        </Button>
+                      </div>
+                      <Textarea
+                        value={promptData.prompt}
+                        onChange={(e) => updatePrompt(i, { prompt: e.target.value })}
+                        placeholder="Describe what you want to generate. Reference uploaded images as Figure 1, Figure 2, etc."
+                        className="min-h-[100px] resize-y border-zinc-800 bg-zinc-900 font-mono text-xs leading-relaxed text-zinc-100 placeholder:text-zinc-600"
+                      />
+                    </div>
+
+                    {/* Image analysis (if available) */}
+                    {promptData.referenceImageAnalysis && (
+                      <div className="rounded-md border border-zinc-800 bg-zinc-950/50">
+                        <button
+                          onClick={() =>
+                            setExpandedAnalysis((prev) => ({
+                              ...prev,
+                              [i]: !prev[i],
+                            }))
+                          }
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-zinc-400 transition-colors hover:text-zinc-300"
+                        >
+                          {expandedAnalysis[i] ? (
+                            <ChevronDown className="h-3 w-3" />
+                          ) : (
+                            <ChevronRight className="h-3 w-3" />
+                          )}
+                          <Eye className="h-3 w-3" />
+                          Reference Image Analysis
+                        </button>
+                        {expandedAnalysis[i] && (
+                          <div className="whitespace-pre-wrap border-t border-zinc-800 px-3 py-2.5 text-xs leading-relaxed text-zinc-500">
+                            {promptData.referenceImageAnalysis}
+                          </div>
+                        )}
                       </div>
                     )}
+
+                    <Separator className="bg-zinc-800" />
+
+                    {/* Generation controls */}
+                    <GenerationControls
+                      settings={settings}
+                      onChange={setSettings}
+                    />
+
+                    {/* Generate button */}
+                    <div className="flex items-center gap-3">
+                      <Button
+                        onClick={() => handleGenerate(i)}
+                        disabled={
+                          isGenerating ||
+                          !promptData.prompt.trim() ||
+                          promptData.referenceImages.length === 0
+                        }
+                        className="bg-violet-600 text-white hover:bg-violet-700"
+                      >
+                        {isGenerating && generatingTab === i ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="mr-2 h-4 w-4" />
+                            Generate {isCarousel && `Image ${i + 1}`}
+                          </>
+                        )}
+                      </Button>
+                      {promptData.referenceImages.length === 0 && (
+                        <span className="text-xs text-zinc-500">
+                          Upload at least one reference image to start{" "}
+                          <span className="text-zinc-600">
+                            (Seedream 4.5 edit endpoint requires reference images)
+                          </span>
+                        </span>
+                      )}
+                    </div>
+
                   </div>
                 )}
-
-                <Separator className="bg-zinc-800" />
-
-                {/* Generation controls */}
-                <GenerationControls
-                  settings={settings}
-                  onChange={setSettings}
-                />
-
-                {/* Generate button */}
-                <div className="flex items-center gap-3">
-                  <Button
-                    onClick={() => handleGenerate(i)}
-                    disabled={
-                      isGenerating ||
-                      !promptData.prompt.trim() ||
-                      promptData.referenceImages.length === 0
-                    }
-                    className="bg-violet-600 text-white hover:bg-violet-700"
-                  >
-                    {isGenerating && generatingTab === i ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="mr-2 h-4 w-4" />
-                        Generate {isCarousel && `Image ${i + 1}`}
-                      </>
-                    )}
-                  </Button>
-                  {promptData.referenceImages.length === 0 && (
-                    <span className="text-xs text-zinc-500">
-                      Upload at least one reference image to start{" "}
-                      <span className="text-zinc-600">
-                        (Seedream 4.5 edit endpoint requires reference images)
-                      </span>
-                    </span>
-                  )}
-                </div>
-
-              </div>
-            </TabsContent>
-          ))}
+              </TabsContent>
+            );
+          })}
         </Tabs>
       </div>
 

@@ -19,6 +19,7 @@ import { InfoTooltip } from "@/components/image-generation/InfoTooltip";
 import { tooltips } from "@/lib/tooltips";
 import { ReferenceLibraryDialog } from "../reference-library/ReferenceLibraryDialog";
 import type { ReferenceImage } from "@/lib/types";
+import { loadIdentity, buildPersonaContext } from "@/lib/identity";
 
 interface IdeaInputProps {
   onGenerate: (
@@ -123,6 +124,15 @@ export function IdeaInput({ onGenerate, isLoading }: IdeaInputProps) {
     if (!idea.trim() && images.length === 0) return;
     onGenerate(idea, images, creationMode, postType);
   };
+
+  // Build persona context for API call if identity is active
+  const getPersonaContext = useCallback(() => {
+    const identity = loadIdentity();
+    if (identity.isActive) {
+      return buildPersonaContext(identity);
+    }
+    return undefined;
+  }, []);
 
   const canSubmit =
     creationMode &&

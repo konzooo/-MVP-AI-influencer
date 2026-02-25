@@ -8,18 +8,24 @@ import {
   CreationMode,
   PostType,
   createEmptyPost,
-  GeneratedImage,
 } from "@/lib/types";
 import { loadPosts, savePost, deletePost } from "@/lib/store";
 import { IdeaInput } from "@/components/creative-lab/IdeaInput";
-import { PostPlanCard } from "@/components/creative-lab/PostPlanCard";
+import { PostDetailView } from "@/components/creative-lab/PostDetailView";
 import { DraftList } from "@/components/creative-lab/DraftList";
 import { Separator } from "@/components/ui/separator";
+import { loadIdentity, buildPersonaContext } from "@/lib/identity";
+
+type View = "list" | "detail";
 
 export default function CreativeLabPage() {
   const [posts, setPosts] = useState<PostPlan[]>([]);
-  const [currentPlan, setCurrentPlan] = useState<PostPlan | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // View state
+  const [view, setView] = useState<View>("list");
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [initialEditMode, setInitialEditMode] = useState(false);
 
   // Load posts on mount
   useEffect(() => {
@@ -30,6 +36,28 @@ export default function CreativeLabPage() {
     setPosts(loadPosts());
   }, []);
 
+  // Get the currently selected post from the posts list
+  const selectedPost = selectedPostId
+    ? posts.find((p) => p.id === selectedPostId) || null
+    : null;
+
+  // ─── Navigation helpers ──────────────────────────────────────────
+
+  const navigateToDetail = (postId: string, editMode: boolean = false) => {
+    setSelectedPostId(postId);
+    setInitialEditMode(editMode);
+    setView("detail");
+  };
+
+  const navigateToList = () => {
+    setView("list");
+    setSelectedPostId(null);
+    setInitialEditMode(false);
+    refreshPosts();
+  };
+
+  // ─── Generation ──────────────────────────────────────────────────
+
   const handleGenerate = async (
     idea: string,
     images: string[],
@@ -38,24 +66,19 @@ export default function CreativeLabPage() {
   ) => {
     setIsLoading(true);
 
+    // For from_own_images, we handle differently (no detail view loading state)
+    // For brainstorm flows, switch to detail view with loading state immediately
+    if (creationMode !== "from_own_images") {
+      // Create a placeholder post and navigate to detail with loading
+      setView("detail");
+      setSelectedPostId(null); // Will be set when generation completes
+      setInitialEditMode(true);
+    }
+
     try {
-      // Handle "from_own_images" differently - analyze and create ready post
+      // Handle "from_own_images" differently
       if (creationMode === "from_own_images") {
-        const response = await fetch("/api/analyze-images", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ images, notes: idea }), // Use 'idea' field for optional notes
-        });
-
-        if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error || "Failed to analyze images");
-        }
-
-        const result = await response.json();
-
         // Upload base64 images to fal storage to get persistent URLs
-        // (base64 data URIs are too large for localStorage)
         const uploadedUrls: string[] = [];
         for (const img of images) {
           const uploadResp = await fetch("/api/upload", {
@@ -67,24 +90,110 @@ export default function CreativeLabPage() {
           uploadedUrls.push(uploadData.error ? img : uploadData.url);
         }
 
-        // Create post directly with status "ready"
+        // CAROUSEL: Use first image as slide 1, generate prompts for slides 2-4
+        if (postType === "carousel") {
+          // Switch to detail view with loading for carousel generation
+          setView("detail");
+          setSelectedPostId(null);
+          setInitialEditMode(true);
+
+          const identity = loadIdentity();
+          const personaContext = identity.isActive ? buildPersonaContext(identity) : undefined;
+
+          const expandResponse = await fetch("/api/expand-carousel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: images[0], notes: idea, personaContext }),
+          });
+
+          if (!expandResponse.ok) {
+            const data = await expandResponse.json();
+            throw new Error(data.error || "Failed to generate carousel plan");
+          }
+
+          const result = await expandResponse.json();
+
+          const newPost = createEmptyPost("from_own_images", "carousel");
+          newPost.title = result.title;
+          newPost.description = result.description;
+          newPost.caption = result.caption;
+          newPost.hashtags = result.hashtags;
+          newPost.notes = result.notes || "";
+          newPost.status = "approved";
+
+          // Image prompt 0 = empty (user's own image, no generation needed)
+          // Image prompts 1-3 = AI-generated companion prompts, prefilled with user's image as reference
+          newPost.imagePrompts = [
+            { prompt: "", referenceImages: [] },
+            ...(result.imagePrompts || []).map((ip: any) => ({
+              prompt: ip.prompt || "",
+              referenceImages: [uploadedUrls[0]],
+            })),
+          ];
+
+          newPost.generatedImages = [{
+            id: `own-${Date.now()}-0`,
+            url: uploadedUrls[0],
+            prompt: "User-provided image",
+            selected: true,
+            createdAt: new Date().toISOString(),
+            promptIndex: 0,
+            userProvided: true,
+            settings: {
+              imageSize: "portrait_4_3",
+              numImages: 1,
+              numVariations: 1,
+              enableSafetyChecker: true,
+            },
+          }];
+
+          newPost.referenceImages = images;
+
+          savePost(newPost);
+          refreshPosts();
+          navigateToDetail(newPost.id, true);
+          toast.success("Carousel plan created!");
+          return;
+        }
+
+        // SINGLE IMAGE / STORY: Analyze and create ready post
+        setView("detail");
+        setSelectedPostId(null);
+        setInitialEditMode(false);
+
+        const identity = loadIdentity();
+        const personaContext = identity.isActive ? buildPersonaContext(identity) : undefined;
+
+        const response = await fetch("/api/analyze-images", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ images, notes: idea, personaContext }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || "Failed to analyze images");
+        }
+
+        const result = await response.json();
+
         const newPost = createEmptyPost("from_own_images", result.postType || postType);
         newPost.title = result.title;
         newPost.description = result.description;
         newPost.caption = result.caption;
         newPost.hashtags = result.hashtags;
         newPost.postType = result.postType || postType;
-        newPost.status = "ready"; // Skip generation phase
+        newPost.status = "ready";
 
-        // Convert uploaded images to GeneratedImage format with selected=true
         newPost.generatedImages = uploadedUrls.map((url, index) => ({
           id: `own-${Date.now()}-${index}`,
           url,
           prompt: "User-provided image",
           selected: true,
           createdAt: new Date().toISOString(),
+          userProvided: true,
           settings: {
-            imageSize: "square_hd",
+            imageSize: "portrait_4_3",
             numImages: 1,
             numVariations: 1,
             enableSafetyChecker: true,
@@ -93,15 +202,19 @@ export default function CreativeLabPage() {
 
         savePost(newPost);
         refreshPosts();
+        navigateToDetail(newPost.id, false);
         toast.success("Post created from your images!");
         return;
       }
 
       // Normal brainstorm flow for other modes
+      const identity = loadIdentity();
+      const personaContext = identity.isActive ? buildPersonaContext(identity) : undefined;
+
       const response = await fetch("/api/brainstorm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea, images, creationMode, postType }),
+        body: JSON.stringify({ idea, images, creationMode, postType, personaContext }),
       });
 
       if (!response.ok) {
@@ -111,9 +224,7 @@ export default function CreativeLabPage() {
 
       const plan = await response.json();
 
-      // Create a new PostPlan from the AI response
       const newPost = createEmptyPost(creationMode, postType);
-      // Post type is set at creation and locked — use what user selected
       newPost.postType = postType;
       newPost.title = plan.title || "";
       newPost.description = plan.description || "";
@@ -122,13 +233,12 @@ export default function CreativeLabPage() {
       newPost.imagePrompts =
         plan.imagePrompts?.map((ip: any) => ({
           prompt: ip.prompt || "",
-          referenceImages: [], // Will be set in Image Generation tab
+          referenceImages: [],
           referenceImageAnalysis: ip.referenceImageAnalysis,
         })) || newPost.imagePrompts;
       newPost.referenceImages = images;
       newPost.notes = plan.notes || "";
 
-      // Story-specific fields
       if (postType === "story") {
         newPost.storyConfig = {
           duration: 5,
@@ -137,37 +247,29 @@ export default function CreativeLabPage() {
         };
       }
 
-      setCurrentPlan(newPost);
+      savePost(newPost);
+      refreshPosts();
+      navigateToDetail(newPost.id, true);
       toast.success("Post plan generated!");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to generate plan");
+      // On error, go back to list if we were showing loading
+      if (view === "detail" && !selectedPostId) {
+        setView("list");
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSaveDraft = () => {
-    if (!currentPlan) return;
-    const updated = { ...currentPlan, status: "draft" as const };
-    savePost(updated);
-    setCurrentPlan(null);
-    refreshPosts();
+  // ─── List actions ────────────────────────────────────────────────
+
+  const handleViewPost = (post: PostPlan) => {
+    navigateToDetail(post.id, false);
   };
 
-  const handleApprove = () => {
-    if (!currentPlan) return;
-    const updated = { ...currentPlan, status: "approved" as const };
-    savePost(updated);
-    setCurrentPlan(null);
-    refreshPosts();
-  };
-
-  const handleDiscard = () => {
-    setCurrentPlan(null);
-  };
-
-  const handleEditDraft = (post: PostPlan) => {
-    setCurrentPlan(post);
+  const handleEditPost = (post: PostPlan) => {
+    navigateToDetail(post.id, true);
   };
 
   const handleApproveDraft = (id: string) => {
@@ -181,6 +283,10 @@ export default function CreativeLabPage() {
   const handleDeletePost = (id: string) => {
     deletePost(id);
     refreshPosts();
+    // If we're viewing the deleted post, go back to list
+    if (selectedPostId === id) {
+      navigateToList();
+    }
   };
 
   const handleStatusChange = (id: string, newStatus: PostStatus) => {
@@ -190,6 +296,35 @@ export default function CreativeLabPage() {
     refreshPosts();
   };
 
+  // ─── Detail view actions ─────────────────────────────────────────
+
+  const handlePostUpdate = (updatedPost: PostPlan) => {
+    refreshPosts();
+  };
+
+  const handleDetailApprove = (updatedPost: PostPlan) => {
+    refreshPosts();
+  };
+
+  // ─── Render ──────────────────────────────────────────────────────
+
+  // Detail view
+  if (view === "detail") {
+    return (
+      <PostDetailView
+        post={selectedPost}
+        isLoading={isLoading}
+        initialEditMode={initialEditMode}
+        onBack={navigateToList}
+        onPostUpdate={handlePostUpdate}
+        onApprove={handleDetailApprove}
+        onDelete={handleDeletePost}
+        onStatusChange={handleStatusChange}
+      />
+    );
+  }
+
+  // List view
   return (
     <div className="mx-auto max-w-4xl p-6">
       {/* Header */}
@@ -204,19 +339,6 @@ export default function CreativeLabPage() {
       {/* Input area */}
       <IdeaInput onGenerate={handleGenerate} isLoading={isLoading} />
 
-      {/* Generated plan */}
-      {currentPlan && (
-        <div className="mt-6">
-          <PostPlanCard
-            post={currentPlan}
-            onChange={setCurrentPlan}
-            onSaveDraft={handleSaveDraft}
-            onApprove={handleApprove}
-            onDiscard={handleDiscard}
-          />
-        </div>
-      )}
-
       {/* Post list */}
       <Separator className="my-6 bg-zinc-800" />
       <div>
@@ -225,7 +347,8 @@ export default function CreativeLabPage() {
         </h3>
         <DraftList
           posts={posts}
-          onEdit={handleEditDraft}
+          onView={handleViewPost}
+          onEdit={handleEditPost}
           onApprove={handleApproveDraft}
           onDelete={handleDeletePost}
           onStatusChange={handleStatusChange}

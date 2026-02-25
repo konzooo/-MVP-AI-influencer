@@ -145,7 +145,7 @@ export function ReferenceImageCard({
         selected ? 'ring-2 ring-violet-500' : 'hover:ring-2 hover:ring-violet-500/50'
       }`}>
         <CardContent className="p-0">
-          {selectable ? imageElement : <DialogTrigger asChild>{imageElement}</DialogTrigger>}
+          {selectable ? <div onClick={handleSelect}>{imageElement}</div> : <DialogTrigger asChild>{imageElement}</DialogTrigger>}
           
           <div className="p-3">
             <h3 className="font-medium text-sm text-zinc-100 mb-1 line-clamp-1">
@@ -182,36 +182,37 @@ export function ReferenceImageCard({
         </CardContent>
       </Card>
 
-      <DialogContent className="max-w-4xl max-h-[90vh]">
+      <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Camera className="h-5 w-5" />
             {image.filename}
           </DialogTitle>
         </DialogHeader>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <div className="flex flex-col gap-6">
           {/* Image Preview */}
-          <div className="relative aspect-square overflow-hidden rounded-lg bg-zinc-900">
+          <div className="relative w-full max-h-[60vh] overflow-hidden rounded-lg bg-zinc-900 flex items-center justify-center">
             {!imageError ? (
               <Image
                 src={image.imagePath}
                 alt={image.summary}
-                fill
-                className="object-contain"
+                width={1200}
+                height={800}
+                className="object-contain max-h-[60vh] w-auto"
                 onError={() => setImageError(true)}
                 priority
-                sizes="(max-width: 1200px) 100vw, 50vw"
+                sizes="100vw"
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-zinc-400">
+              <div className="flex h-64 w-full items-center justify-center text-zinc-400">
                 <Camera className="h-16 w-16" />
               </div>
             )}
           </div>
-          
+
           {/* Details */}
-          <ScrollArea className="h-[500px]">
+          <ScrollArea className="max-h-[30vh]">
             <div className="space-y-4">
               {/* Edit Mode Controls */}
               {!isEditMode && (

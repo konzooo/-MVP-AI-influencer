@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Lightbulb, ImageIcon, Send, Menu, Images, Coins } from "lucide-react";
+import { Lightbulb, ImageIcon, Send, Menu, Images, Coins, Instagram, User, Eye, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { CostIndicator } from "@/components/settings/CostIndicator";
+import { InstagramAccountDialog } from "@/components/post-manager/InstagramAccountSection";
 
 const navItems = [
   {
@@ -42,6 +43,7 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [instagramOpen, setInstagramOpen] = useState(false);
 
   return (
     <>
@@ -61,9 +63,26 @@ export function Sidebar() {
                   Reference Library
                 </Link>
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setInstagramOpen(true)}>
+                <Instagram className="h-4 w-4" />
+                Instagram Account
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
                 <Coins className="h-4 w-4" />
                 Cost Tracker
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href="/identity" className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Identity Profile
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/transparency" className="flex items-center gap-2">
+                  <Eye className="h-4 w-4" />
+                  Transparency & Config
+                </Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -113,6 +132,32 @@ export function Sidebar() {
               );
             })}
           </ul>
+
+          {/* Automation */}
+          <p className="mb-3 mt-6 px-2 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+            Automation
+          </p>
+          <ul className="space-y-1">
+            <li>
+              <Link
+                href="/automated-tasks"
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
+                  pathname.startsWith("/automated-tasks")
+                    ? "bg-zinc-800 text-zinc-100"
+                    : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                )}
+              >
+                <Zap className="h-4 w-4" />
+                <div className="flex-1">
+                  <span className="block font-medium">Automated Tasks</span>
+                  <span className="block text-[10px] text-zinc-500">
+                    Recurring posts
+                  </span>
+                </div>
+              </Link>
+            </li>
+          </ul>
         </nav>
 
         {/* Footer */}
@@ -125,6 +170,7 @@ export function Sidebar() {
       </aside>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <InstagramAccountDialog open={instagramOpen} onOpenChange={setInstagramOpen} />
     </>
   );
 }

@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 
 interface DraftListProps {
   posts: PostPlan[];
+  onView: (post: PostPlan) => void;
   onEdit: (post: PostPlan) => void;
   onApprove: (id: string) => void;
   onDelete: (id: string) => void;
@@ -23,6 +24,7 @@ const postTypeLabels: Record<PostType, string> = {
 
 export function DraftList({
   posts,
+  onView,
   onEdit,
   onApprove,
   onDelete,
@@ -46,7 +48,8 @@ export function DraftList({
         return (
           <div
             key={post.id}
-            className="flex items-center gap-4 rounded-lg border border-zinc-800 bg-zinc-900/30 px-4 py-3 transition-colors hover:bg-zinc-900/60"
+            onClick={() => onView(post)}
+            className="flex cursor-pointer items-center gap-4 rounded-lg border border-zinc-800 bg-zinc-900/30 px-4 py-3 transition-colors hover:bg-zinc-900/60"
           >
             {/* Thumbnail / icon */}
             <div className="flex h-10 w-10 items-center justify-center rounded-md bg-zinc-800">
@@ -91,17 +94,19 @@ export function DraftList({
             )}
 
             {/* Status */}
-            <StatusBadge
-              status={post.status}
-              onStatusChange={
-                onStatusChange
-                  ? (newStatus) => onStatusChange(post.id, newStatus)
-                  : undefined
-              }
-            />
+            <div onClick={(e) => e.stopPropagation()}>
+              <StatusBadge
+                status={post.status}
+                onStatusChange={
+                  onStatusChange
+                    ? (newStatus) => onStatusChange(post.id, newStatus)
+                    : undefined
+                }
+              />
+            </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
               <Button
                 variant="ghost"
                 size="icon"

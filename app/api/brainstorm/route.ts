@@ -11,8 +11,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = (await request.json()) as BrainstormRequest;
-    const { idea, images, creationMode, postType } = body;
+    const body = (await request.json()) as BrainstormRequest & { personaContext?: string };
+    const { idea, images, creationMode, postType, personaContext } = body;
 
     if (!idea && (!images || images.length === 0)) {
       return NextResponse.json(
@@ -28,7 +28,8 @@ export async function POST(request: NextRequest) {
         creationMode: creationMode || "from_scratch",
         postType: postType || "single_image",
       },
-      apiKey
+      apiKey,
+      personaContext
     );
     return NextResponse.json(plan);
   } catch (error) {

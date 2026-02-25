@@ -1,25 +1,57 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { PostPlan, PostStatus } from "@/lib/types";
 import { loadPosts, savePost } from "@/lib/store";
 import { Send, Clock, ImageIcon } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PostDetail } from "@/components/post-manager/PostDetail";
+import { toast } from "sonner";
 
 export default function PostManagerPage() {
+  return (
+    <Suspense>
+      <PostManagerContent />
+    </Suspense>
+  );
+}
+
+function PostManagerContent() {
   const [posts, setPosts] = useState<PostPlan[]>([]);
   const [selectedPost, setSelectedPost] = useState<PostPlan | null>(null);
 
+  const searchParams = useSearchParams();
+
   const refreshPosts = useCallback(() => {
     const all = loadPosts();
-    const ready = all.filter((p) => p.status === "ready" || p.status === "posted");
-    setPosts(ready);
+    const visible = all.filter(
+      (p) =>
+        p.status === "ready" ||
+        p.status === "publishing" ||
+        p.status === "scheduled" ||
+        p.status === "posted"
+    );
+    setPosts(visible);
   }, []);
 
   useEffect(() => {
     refreshPosts();
   }, [refreshPosts]);
+
+  // Handle OAuth callback query params
+  useEffect(() => {
+    const igConnected = searchParams.get("ig_connected");
+    const igError = searchParams.get("ig_error");
+
+    if (igConnected === "true") {
+      toast.success("Instagram account connected successfully!");
+      window.history.replaceState({}, "", "/post-manager");
+    } else if (igError) {
+      toast.error(`Instagram connection failed: ${igError}`);
+      window.history.replaceState({}, "", "/post-manager");
+    }
+  }, [searchParams]);
 
   const handlePostUpdate = (updatedPost: PostPlan) => {
     savePost(updatedPost);
@@ -66,12 +98,12 @@ export default function PostManagerPage() {
             <Send className="h-7 w-7 text-zinc-600" />
           </div>
           <h3 className="mt-4 text-sm font-medium text-zinc-400">
-            Coming Soon
+            No Posts Ready
           </h3>
           <p className="mt-2 max-w-md text-xs leading-relaxed text-zinc-600">
-            This will be the home of scheduling and auto-posting. For now,
-            complete posts will appear here once you&apos;ve generated and
-            selected images in the Image Generation tab.
+            Posts will appear here once you&apos;ve generated and
+            selected images in the Image Generation tab. You can then
+            publish or schedule them to Instagram.
           </p>
           <div className="mt-6 flex items-center gap-4 text-[10px] text-zinc-600">
             <div className="flex items-center gap-1">

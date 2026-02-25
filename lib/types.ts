@@ -1,4 +1,4 @@
-export type PostStatus = "draft" | "approved" | "generating" | "ready" | "posted";
+export type PostStatus = "draft" | "approved" | "generating" | "ready" | "publishing" | "scheduled" | "posted";
 export type PostType = "single_image" | "carousel" | "reel_cover" | "story";
 export type CreationMode = "from_scratch" | "copy_post" | "from_own_images";
 
@@ -37,6 +37,8 @@ export interface GeneratedImage {
   createdAt: string;
   /** Index of the imagePrompt this was generated from (for carousels) */
   promptIndex?: number;
+  /** True if this image was uploaded by the user (not AI-generated) — should not be regenerated */
+  userProvided?: boolean;
 }
 
 export interface GenerationAttempt {
@@ -45,6 +47,18 @@ export interface GenerationAttempt {
   settings: GenerationSettings;
   images: GeneratedImage[];
   createdAt: string;
+}
+
+// Instagram publishing status tracking
+export type PublishingStatus = "idle" | "creating_containers" | "publishing" | "published" | "scheduled" | "failed";
+
+export interface PublishingInfo {
+  status: PublishingStatus;
+  igPostId?: string;
+  permalink?: string;
+  publishedAt?: string;
+  scheduledFor?: string;
+  error?: string;
 }
 
 export interface PostPlan {
@@ -70,6 +84,13 @@ export interface PostPlan {
   // Image Generation output
   generatedImages: GeneratedImage[];
   generationHistory: GenerationAttempt[];
+
+  // Instagram publishing
+  publishingInfo?: PublishingInfo;
+
+  // Automated Tasks — links this post to a task
+  taskId?: string;        // Which task created this post
+  taskItemId?: string;    // Which inspiration item was used
 }
 
 // Reference Image Library Types

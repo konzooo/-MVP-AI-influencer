@@ -3,7 +3,7 @@ import { readdir, readFile } from "fs/promises";
 import { join } from "path";
 import type { ReferenceImage, ReferenceImageMetadata } from "@/lib/types";
 
-const REFERENCE_IMAGES_PATH = "/Users/kons/Documents/Images/<alba_ai0>/Training Data set";
+const REFERENCE_IMAGES_PATH = "/Users/kons/Documents/Side/Images/<alba_ai0>/Training Data set";
 
 export async function GET() {
   try {
