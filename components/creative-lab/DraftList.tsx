@@ -3,7 +3,7 @@
 import { PostPlan, PostType, PostStatus } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, Edit2, Trash2, ImageIcon, Copy } from "lucide-react";
+import { Check, Edit2, Trash2, ImageIcon, Copy, Zap } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 
 interface DraftListProps {
@@ -90,6 +90,17 @@ export function DraftList({
               >
                 <Copy className="mr-0.5 h-2.5 w-2.5" />
                 Copy
+              </Badge>
+            )}
+
+            {/* Task badge */}
+            {post.taskId && (
+              <Badge
+                variant="outline"
+                className="border-violet-800 bg-violet-950/30 text-[10px] text-violet-400"
+              >
+                <Zap className="mr-0.5 h-2.5 w-2.5" />
+                Task
               </Badge>
             )}
 

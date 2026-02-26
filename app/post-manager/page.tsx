@@ -4,7 +4,8 @@ import { Suspense, useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { PostPlan, PostStatus } from "@/lib/types";
 import { loadPosts, savePost } from "@/lib/store";
-import { Send, Clock, ImageIcon } from "lucide-react";
+import { Send, Clock, ImageIcon, Zap } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { PostDetail } from "@/components/post-manager/PostDetail";
 import { toast } from "sonner";
@@ -159,6 +160,15 @@ function PostManagerContent() {
                       }
                     />
                   </div>
+                  {post.taskId && (
+                    <Badge
+                      variant="outline"
+                      className="mt-1 border-violet-800 bg-violet-950/30 text-[10px] text-violet-400"
+                    >
+                      <Zap className="mr-0.5 h-2.5 w-2.5" />
+                      Task
+                    </Badge>
+                  )}
                   <p className="mt-1 line-clamp-2 text-xs text-zinc-500">
                     {post.caption || post.description || "No caption"}
                   </p>
