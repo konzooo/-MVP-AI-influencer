@@ -11,7 +11,7 @@ import {
   PostPlan,
   PostType,
 } from "./types";
-import { loadPosts, savePost as savePostState } from "./store";
+import { savePost as savePostState } from "./store";
 import { loadIdentity } from "./identity";
 import { saveTask, computeNextRunAt } from "./task-store";
 import {
@@ -23,6 +23,7 @@ import { uploadToFalStorage } from "./fal";
 import { checkDailyLimit, recordGeneration } from "./cost-tracker";
 import { canPublish, recordPublish } from "./instagram-rate-limit";
 import { ReferenceImage } from "./types";
+import { loadAISettings } from "./ai-settings";
 
 interface ExecutionLog {
   lines: string[];
@@ -37,6 +38,181 @@ function createLog(): ExecutionLog {
       console.log(`[TaskRunner] ${msg}`);
     },
   };
+}
+
+// ─── Standalone generation function ──────────────────────────────────────────
+// Can be called independently from the task runner (e.g. from the modal approve flow)
+
+export interface GeneratePostResult {
+  success: boolean;
+  error: string | null;
+  log: string[];
+}
+
+export async function generatePostImages(
+  post: PostPlan,
+  options: {
+    imageSize: string;
+    styleModeHint?: string;
+  }
+): Promise<GeneratePostResult> {
+  const log = createLog();
+  const result: GeneratePostResult = { success: false, error: null, log: log.lines };
+
+  try {
+    post.status = "generating";
+    savePostState(post);
+
+    log.add(`Fetching reference library for character reference...`);
+    const refsRes = await fetch("/api/reference-images");
+    if (!refsRes.ok) {
+      result.error = "Could not fetch reference library";
+      log.add(`ERROR: ${result.error}`);
+      return result;
+    }
+
+    const refs: ReferenceImage[] = await refsRes.json();
+    if (refs.length === 0) {
+      result.error = "No character references in library";
+      log.add(`ERROR: ${result.error}`);
+      return result;
+    }
+
+    // Select character reference based on post context
+    let refContext = buildContextFromStyleMode(post.title);
+    if (options.styleModeHint) {
+      refContext = buildContextFromStyleMode(options.styleModeHint);
+    }
+
+    const charRef = selectCharacterReference(refs, refContext);
+    if (!charRef) {
+      result.error = "Failed to select character reference";
+      log.add(`ERROR: ${result.error}`);
+      return result;
+    }
+
+    log.add(`Selected character reference: ${charRef.id}`);
+
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+    const charRefUrl = `${baseUrl}${charRef.imagePath}`;
+
+    // For carousels: track slide 0's generated URL for cascading
+    let slide0GeneratedUrl: string | null = null;
+
+    for (let promptIdx = 0; promptIdx < post.imagePrompts.length; promptIdx++) {
+      const prompt = post.imagePrompts[promptIdx];
+
+      // Skip userProvided prompt (own_image carousel slide 1)
+      if (post.generatedImages.some((g) => g.promptIndex === promptIdx && g.userProvided)) {
+        const userImg = post.generatedImages.find((g) => g.promptIndex === promptIdx && g.userProvided);
+        if (userImg) slide0GeneratedUrl = userImg.url;
+        log.add(`Skipping slide ${promptIdx + 1} (user provided)`);
+        continue;
+      }
+
+      log.add(`Generating images for prompt ${promptIdx + 1}/${post.imagePrompts.length}...`);
+
+      // Check cost limit before generation
+      const limit = checkDailyLimit();
+      if (!limit.allowed) {
+        result.error = `Daily generation limit exceeded (${limit.dailySpend}€ / ${limit.dailyStopLimit}€)`;
+        log.add(`ERROR: ${result.error}`);
+        savePostState(post);
+        return result;
+      }
+
+      // Prepare reference URLs for this prompt
+      const referenceUrls: string[] = [charRefUrl];
+
+      // Cascade slide 0 into subsequent carousel slides
+      if (post.postType === "carousel" && promptIdx > 0 && slide0GeneratedUrl) {
+        referenceUrls.push(slide0GeneratedUrl);
+        log.add(`Cascading slide 1 image as reference for slide ${promptIdx + 1}`);
+      }
+
+      // Add per-prompt references
+      if (prompt.referenceImages && prompt.referenceImages.length > 0) {
+        for (const ref of prompt.referenceImages) {
+          if (ref.startsWith("data:")) {
+            const uploadedUrl = await uploadToFalStorage(ref, process.env.FAL_KEY!);
+            referenceUrls.push(uploadedUrl);
+          } else {
+            referenceUrls.push(ref);
+          }
+        }
+      }
+
+      try {
+        const generateRes = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: prompt.prompt,
+            imageUrls: referenceUrls,
+            imageSize: options.imageSize,
+            numImages: 1,
+            maxImages: 1,
+          }),
+        });
+
+        if (!generateRes.ok) {
+          const err = await generateRes.text();
+          log.add(`WARNING: Generation failed for prompt ${promptIdx}: ${err}`);
+          continue;
+        }
+
+        const genResult = await generateRes.json();
+        if (!genResult.images || genResult.images.length === 0) {
+          log.add(`WARNING: No images returned for prompt ${promptIdx}`);
+          continue;
+        }
+
+        const img = genResult.images[0];
+        post.generatedImages.unshift({
+          id: `gen-${Date.now()}-${promptIdx}`,
+          url: img.url,
+          prompt: prompt.prompt,
+          seed: img.seed,
+          selected: true,
+          createdAt: new Date().toISOString(),
+          promptIndex: promptIdx,
+          settings: {
+            imageSize: options.imageSize,
+            numImages: 1,
+            numVariations: 1,
+            enableSafetyChecker: true,
+          },
+        });
+
+        if (post.postType === "carousel" && promptIdx === 0) {
+          slide0GeneratedUrl = img.url;
+          log.add(`Slide 1 generated — will cascade as reference for remaining slides`);
+        }
+
+        log.add(`Generated image for prompt ${promptIdx + 1}`);
+        recordGeneration();
+
+        // Save after each image so the UI can poll progress
+        savePostState(post);
+      } catch (err) {
+        log.add(
+          `ERROR generating prompt ${promptIdx}: ${err instanceof Error ? err.message : "Unknown error"}`
+        );
+      }
+    }
+
+    post.status = "ready";
+    savePostState(post);
+    log.add(`Status: ready`);
+
+    result.success = true;
+    return result;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    result.error = msg;
+    log.add(`EXCEPTION: ${msg}`);
+    return result;
+  }
 }
 
 /**
@@ -61,20 +237,7 @@ export async function runTask(
   try {
     log.add(`Starting task: "${task.name}"`);
 
-    // ─── Step 1: Guard against in-flight posts ─────────────────────────────────
-
-    const existingPosts = loadPosts();
-    const inFlightPosts = existingPosts.filter(
-      (p) => p.taskId === task.id && !["posted", "scheduled"].includes(p.status)
-    );
-
-    if (inFlightPosts.length > 0) {
-      result.error = `Previous run not yet complete: ${inFlightPosts[0].title || inFlightPosts[0].id}`;
-      log.add(`ABORT: ${result.error}`);
-      return result;
-    }
-
-    // ─── Step 2: Select inspiration item ───────────────────────────────────────
+    // ─── Step 1: Select inspiration item ───────────────────────────────────────
 
     let selectedItem: InspirationItem | null = null;
 
@@ -92,14 +255,9 @@ export async function runTask(
       selectedItem = task.inspirationItems.find((i) => i.status === "pending") || null;
 
       if (!selectedItem) {
-        // Queue empty — synthesize from_scratch item from identity context
+        // Queue empty — synthesize from_scratch item using task's fallback config
         log.add(`Queue empty, synthesizing from_scratch fallback item`);
-        const identity = loadIdentity();
-        selectedItem = synthesizeFromScratchItem(
-          task.defaultPostType,
-          identity.styleModes,
-          identity.preferredLocations
-        );
+        selectedItem = synthesizeFromScratchItem(task);
         result.wasFallback = true;
       }
     }
@@ -110,12 +268,6 @@ export async function runTask(
     // ─── Step 3: Brainstorm / Analyze / Expand ────────────────────────────────
 
     let post: PostPlan;
-    const geminiApiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
-    if (!geminiApiKey) {
-      result.error = "GEMINI_API_KEY not configured";
-      return result;
-    }
 
     const identity = loadIdentity();
     const personaContext = identity.isActive
@@ -147,6 +299,15 @@ export async function runTask(
         post = createEmptyPost("from_own_images", "carousel");
         Object.assign(post, expandPlan);
         post.status = "approved"; // needs generation for slides 2-4
+
+        // Inject user's own image as reference for all companion slides (2-4)
+        // so generation stays visually consistent with the original photo
+        post.imagePrompts = post.imagePrompts.map((p, idx) =>
+          idx === 0
+            ? p
+            : { ...p, referenceImages: [selectedItem.imageUrls[0], ...(p.referenceImages ?? [])] }
+        );
+
         log.add(
           `Expand carousel complete: "${post.title}" with ${post.imagePrompts.length} prompts`
         );
@@ -246,7 +407,8 @@ export async function runTask(
         selectedItem as FromScratchInspirationItem,
         identity
       );
-      log.add(`Calling brainstorm API in from_scratch mode...`);
+      const aiSettings = loadAISettings();
+      log.add(`Calling brainstorm API in from_scratch mode (using ${aiSettings.brainstormFromScratch})...`);
       const brainstormRes = await fetch("/api/brainstorm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -256,6 +418,7 @@ export async function runTask(
           creationMode: "from_scratch",
           postType: selectedItem.postType,
           personaContext,
+          aiProvider: aiSettings.brainstormFromScratch,
         }),
       });
 
@@ -286,6 +449,13 @@ export async function runTask(
       log.add(`Manual approval mode: saving post at ${post.status}, stopping`);
       savePostState(post);
       markItemUsed(task, selectedItem.id);
+
+      // Always advance nextRunAt so the scheduler doesn't re-fire every 60s
+      task.lastRunAt = new Date().toISOString();
+      task.nextRunAt = computeNextRunAt(task);
+      saveTask(task);
+      log.add(`Next run scheduled: ${task.nextRunAt}`);
+
       result.success = true;
       result.postId = post.id;
       return result;
@@ -302,142 +472,33 @@ export async function runTask(
     // If no generation needed (own_image single/story), skip to publish
     if (selectedItem.type === "own_image" && selectedItem.postType !== "carousel") {
       post.status = "ready";
+      savePostState(post);
       log.add(`Status: ready (own image, no generation needed)`);
     } else {
-      // Generation needed: fetch reference library, select character ref, generate
-      log.add(`Fetching reference library for character reference...`);
-      const refsRes = await fetch("/api/reference-images");
-      if (!refsRes.ok) {
-        log.add(`WARNING: Could not fetch reference library`);
-      } else {
-        const refs: ReferenceImage[] = await refsRes.json();
-        if (refs.length === 0) {
-          result.error = "No character references in library";
-          log.add(`ERROR: ${result.error}`);
-          savePostState(post);
-          return result;
+      // Determine style mode hint for character reference selection
+      let styleModeHint: string | undefined;
+      if (selectedItem.type === "from_scratch") {
+        const item = selectedItem as FromScratchInspirationItem;
+        if (item.preferredStyleMode) {
+          styleModeHint = item.preferredStyleMode;
         }
+      }
 
-        // Select character reference based on post context
-        let refContext = buildContextFromStyleMode(post.title);
-        if (selectedItem.type === "from_scratch") {
-          const item = selectedItem as FromScratchInspirationItem;
-          if (item.preferredStyleMode) {
-            refContext = buildContextFromStyleMode(item.preferredStyleMode);
-          }
-        }
+      const genResult = await generatePostImages(post, {
+        imageSize: task.defaultImageSize,
+        styleModeHint,
+      });
 
-        const charRef = selectCharacterReference(refs, refContext);
-        if (!charRef) {
-          result.error = "Failed to select character reference";
-          log.add(`ERROR: ${result.error}`);
-          return result;
-        }
+      for (const line of genResult.log) {
+        log.add(line);
+      }
 
-        log.add(`Selected character reference: ${charRef.id}`);
-
-        // Upload character reference to CDN
-        const baseUrl =
-          process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-        const charRefUrl = `${baseUrl}${charRef.imagePath}`;
-
-        // Generation for each prompt
-        post.status = "generating";
-        for (let promptIdx = 0; promptIdx < post.imagePrompts.length; promptIdx++) {
-          const prompt = post.imagePrompts[promptIdx];
-
-          // Skip userProvided prompt (carousel slide 1)
-          if (post.generatedImages.some((g) => g.promptIndex === promptIdx && g.userProvided)) {
-            log.add(`Skipping slide ${promptIdx + 1} (user provided)`);
-            continue;
-          }
-
-          log.add(`Generating images for prompt ${promptIdx + 1}/${post.imagePrompts.length}...`);
-
-          // Check cost limit before generation
-          const limit = checkDailyLimit();
-          if (!limit.allowed) {
-            result.error = `Daily generation limit exceeded (${limit.dailySpend}€ / ${limit.dailyStopLimit}€)`;
-            log.add(`ERROR: ${result.error}`);
-            post.status = "generating"; // leave partial
-            savePostState(post);
-            return result;
-          }
-
-          // Prepare reference URLs for this prompt
-          const referenceUrls: string[] = [charRefUrl];
-
-          // Add existing references from the prompt
-          if (prompt.referenceImages && prompt.referenceImages.length > 0) {
-            // Try to upload to CDN if they're base64, otherwise assume they're URLs
-            for (const ref of prompt.referenceImages) {
-              if (ref.startsWith("data:")) {
-                const uploadedUrl = await uploadToFalStorage(ref, process.env.FAL_KEY!);
-                referenceUrls.push(uploadedUrl);
-              } else {
-                referenceUrls.push(ref);
-              }
-            }
-          }
-
-          try {
-            const generateRes = await fetch("/api/generate", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                prompt: prompt.prompt,
-                imageUrls: referenceUrls,
-                imageSize: task.defaultImageSize,
-                numImages: 1,
-                maxImages: 1,
-              }),
-            });
-
-            if (!generateRes.ok) {
-              const err = await generateRes.text();
-              log.add(`WARNING: Generation failed for prompt ${promptIdx}: ${err}`);
-              continue;
-            }
-
-            const genResult = await generateRes.json();
-            if (!genResult.images || genResult.images.length === 0) {
-              log.add(`WARNING: No images returned for prompt ${promptIdx}`);
-              continue;
-            }
-
-            // Auto-select first image
-            const img = genResult.images[0];
-            post.generatedImages.unshift({
-              id: `gen-${Date.now()}-${promptIdx}`,
-              url: img.url,
-              prompt: prompt.prompt,
-              seed: img.seed,
-              selected: true,
-              createdAt: new Date().toISOString(),
-              promptIndex: promptIdx,
-              settings: {
-                imageSize: task.defaultImageSize,
-                numImages: 1,
-                numVariations: 1,
-                enableSafetyChecker: true,
-              },
-            });
-
-            log.add(`Generated image for prompt ${promptIdx + 1}`);
-            recordGeneration();
-          } catch (err) {
-            log.add(
-              `ERROR generating prompt ${promptIdx}: ${err instanceof Error ? err.message : "Unknown error"}`
-            );
-          }
-        }
-
-        post.status = "ready";
-        log.add(`Status: ready`);
+      if (!genResult.success) {
+        result.error = genResult.error;
+        return result;
       }
     }
 
-    savePostState(post);
     log.add(`Post saved: ${post.id}`);
 
     // ─── Step 7: Auto-publish ─────────────────────────────────────────────────
@@ -514,25 +575,50 @@ export async function runTask(
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-function synthesizeFromScratchItem(
-  postType: PostType,
-  styleModes: Array<{ name: string }>,
-  locations: string[]
-): FromScratchInspirationItem {
+function synthesizeFromScratchItem(task: Task): FromScratchInspirationItem {
+  const identity = loadIdentity();
+
+  // Pick style mode randomly from identity
   const styleMode =
-    styleModes[Math.floor(Math.random() * styleModes.length)]?.name || null;
-  const location = locations[Math.floor(Math.random() * locations.length)] || null;
+    identity.styleModes[Math.floor(Math.random() * identity.styleModes.length)]?.name || null;
+
+  // Pick location using weighted selection from task config, or random from identity
+  let location: string | null = null;
+  if (task.fallbackLocations && task.fallbackLocations.length > 0) {
+    location = weightedRandomPick(task.fallbackLocations);
+  } else if (identity.preferredLocations.length > 0) {
+    location = identity.preferredLocations[Math.floor(Math.random() * identity.preferredLocations.length)];
+  }
+
+  // Build notes from task's fallback notes
+  const notes = task.fallbackNotes
+    ? `${task.fallbackNotes}\n\nFallback: ${styleMode || "Auto"} at ${location || "Auto location"}`
+    : `Fallback: ${styleMode || "Auto"} at ${location || "Auto location"}`;
 
   return {
     id: `fallback-${Date.now()}`,
     type: "from_scratch",
     status: "pending",
-    notes: `Fallback: ${styleMode || "Auto"} at ${location || "Auto location"}`,
+    notes,
     usedAt: null,
     preferredStyleMode: styleMode,
     preferredLocation: location,
-    postType,
+    postType: task.defaultPostType,
   };
+}
+
+/**
+ * Weighted random selection from fallback locations
+ * Higher weight = higher probability of being selected
+ */
+function weightedRandomPick(locations: Task["fallbackLocations"]): string {
+  const totalWeight = locations.reduce((sum, l) => sum + l.weight, 0);
+  let random = Math.random() * totalWeight;
+  for (const loc of locations) {
+    random -= loc.weight;
+    if (random <= 0) return loc.location;
+  }
+  return locations[locations.length - 1].location;
 }
 
 function buildFromScratchIdea(

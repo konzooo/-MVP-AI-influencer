@@ -77,8 +77,16 @@ Return your response as valid JSON matching this exact structure:
   "notes": "Differences to watch for, potential challenges, tips for getting the best result"
 }
 
-For carousels with multiple source images, create one imagePrompt per source image, each with its own analysis.
+For single images (single post or story), create one imagePrompt.
 For stories, note the vertical 9:16 format.
+
+For carousels with multiple source images:
+- Create one imagePrompt per source image
+- Slide 1 prompt should be full and detailed (pose, environment, lighting, clothing, mood)
+- Slides 2-4 prompts should be SHORT — only describe what changes (pose and/or expression)
+  - Always add: "Same scene, lighting, outfit, and mood as Figure 1" (Figure 1 will be the first generated slide used as consistency reference)
+  - Example: "The character from Figure 1 laughing and looking to the side, arms crossed. Same scene, lighting, outfit, and mood as Figure 1."
+  - Do NOT repeat the full scene description for every slide — that causes drift. Keep it to 1-2 sentences.
 
 IMPORTANT: The referenceImageAnalysis is shown to the user for transparency so they can see what the AI detected. Include identity features there (hair color, etc.) so the user can verify the AI understood the image — but keep them OUT of the generation prompt.
 
@@ -308,19 +316,21 @@ export async function analyzeImagesWithGemini(
 
 const EXPAND_OWN_IMAGE_CAROUSEL_PROMPT = `${SHARED_PREAMBLE}
 
-The user has uploaded their own image that they want to use as the FIRST slide of an Instagram carousel. Your job is to:
+The user has uploaded their own image that will be used as the FIRST slide of an Instagram carousel. The first slide is already done — your job is to create 3 companion image prompts for slides 2, 3, and 4, plus post details.
 
-1. **Analyze the uploaded image** — understand the setting, mood, style, colors, lighting, clothing, pose, and overall vibe
-2. **Generate 3 companion image prompts** for slides 2, 3, and 4 that would create a cohesive, visually consistent carousel
-3. **Generate post details** — title, description, caption, hashtags
+The companion slides should feel like the person casually snapped a few photos in the same session — same place, same outfit, same vibe — just a different pose, angle, or expression. Like scrolling through someone's photo dump. Do NOT re-describe the outfit or setting in detail; instead, reference the first image as the source of truth.
 
-Guidelines for companion prompts:
-- Each prompt should vary in pose, angle, or framing — but maintain the same overall mood, style, lighting, and setting
-- Think like a photographer doing a mini photoshoot: different angles of the same scene, or a natural progression
-- Reference the character as "the character from Figure 1"
-- Do NOT describe facial features, hair color, or identity traits — the character reference handles that
-- Describe: scene, pose, composition, lighting, mood, clothing, technical qualities
-- Keep the same clothing/outfit across all slides unless the vibe suggests otherwise
+Guidelines for companion prompts (slides 2, 3, 4):
+- ALWAYS start with: "The character from Figure 1, in the same setting and outfit as Figure 1,"
+- Then add a SHORT variation instruction: a different pose, angle, expression, or subtle action
+- Keep prompts concise (1-2 sentences max) — do NOT write a detailed scene description
+- Think: "same photoshoot, casual next shot" energy
+- Do NOT describe facial features, clothing details, hair, or setting from scratch — Figure 1 is the reference
+
+Example prompts:
+- "The character from Figure 1, in the same setting and outfit as Figure 1, slightly turned to the side with a more relaxed pose."
+- "The character from Figure 1, in the same setting and outfit as Figure 1, looking down or away with a candid, unposed expression."
+- "The character from Figure 1, in the same setting and outfit as Figure 1, leaning against the wall with arms crossed, full body visible."
 
 Guidelines for captions:
 - Write in first person as the AI influencer
@@ -330,22 +340,22 @@ Guidelines for captions:
 
 Return your response as valid JSON matching this exact structure:
 {
-  "title": "Descriptive title (e.g. 'Rooftop golden hour, casual vibes, 4-slide set')",
+  "title": "Descriptive title (e.g. 'Apartment mirror selfies, edgy chic outfit, 4-slide set')",
   "description": "1-2 sentence description of the carousel concept",
   "caption": "Instagram caption text (engaging, on-brand, with line breaks as \\n)",
   "hashtags": ["hashtag1", "hashtag2", ...],
   "imagePrompts": [
     {
-      "prompt": "Detailed prompt for slide 2. Reference character as 'the character from Figure 1'. Describe pose, environment, lighting, clothing, mood."
+      "prompt": "The character from Figure 1, in the same setting and outfit as Figure 1, [short variation for slide 2]."
     },
     {
-      "prompt": "Detailed prompt for slide 3. Reference character as 'the character from Figure 1'. Different angle/pose but same setting and mood."
+      "prompt": "The character from Figure 1, in the same setting and outfit as Figure 1, [short variation for slide 3]."
     },
     {
-      "prompt": "Detailed prompt for slide 4. Reference character as 'the character from Figure 1'. Closing shot that completes the visual story."
+      "prompt": "The character from Figure 1, in the same setting and outfit as Figure 1, [short variation for slide 4]."
     }
   ],
-  "notes": "Tips for maintaining visual consistency across the carousel"
+  "notes": "Brief tip for keeping the carousel cohesive"
 }
 
 Return ONLY the JSON object, no markdown code blocks or extra text.`;

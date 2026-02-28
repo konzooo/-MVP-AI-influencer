@@ -64,10 +64,10 @@ export function getTaskById(id: string): Task | undefined {
 }
 
 /**
- * Get all active tasks
+ * Get all running (scheduled) tasks
  */
 export function getActiveTasks(): Task[] {
-  return loadTasks().filter((t) => t.status === "active");
+  return loadTasks().filter((t) => t.status === "running");
 }
 
 /**
@@ -81,8 +81,8 @@ export function getDueTasks(): Task[] {
 }
 
 /**
- * Compute next run time based on task cadence
- * Used after each successful run to update nextRunAt
+ * Compute next run time based on task cadence.
+ * Preserves the scheduledTime (HH:MM) so runs happen at the same time each period.
  */
 export function computeNextRunAt(task: Task): string {
   const base = task.lastRunAt ? new Date(task.lastRunAt) : new Date();
@@ -91,8 +91,13 @@ export function computeNextRunAt(task: Task): string {
   if (task.cadence.unit === "days") {
     next.setDate(next.getDate() + task.cadence.every);
   } else {
-    // weeks
     next.setDate(next.getDate() + task.cadence.every * 7);
+  }
+
+  // Apply the fixed time-of-day from scheduledTime (HH:MM)
+  if (task.scheduledTime) {
+    const [hours, minutes] = task.scheduledTime.split(":").map(Number);
+    next.setHours(hours, minutes, 0, 0);
   }
 
   return next.toISOString();

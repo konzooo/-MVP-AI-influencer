@@ -36,7 +36,7 @@ const IMAGE_SIZE_OPTIONS = [
 export function TaskForm({ open, onOpenChange, initialTask, onSave }: TaskFormProps) {
   const [name, setName] = useState(initialTask?.name ?? "");
   const [description, setDescription] = useState(initialTask?.description ?? "");
-  const [status, setStatus] = useState<TaskStatus>(initialTask?.status ?? "active");
+  const [status, setStatus] = useState<TaskStatus>(initialTask?.status ?? "paused");
   const [approvalMode, setApprovalMode] = useState<TaskApprovalMode>(initialTask?.approvalMode ?? "manual");
   const [cadenceEvery, setCadenceEvery] = useState(initialTask?.cadence.every ?? 1);
   const [cadenceUnit, setCadenceUnit] = useState<"days" | "weeks">(initialTask?.cadence.unit ?? "days");
@@ -51,10 +51,13 @@ export function TaskForm({ open, onOpenChange, initialTask, onSave }: TaskFormPr
       name: name.trim(),
       description: description.trim(),
       status,
+      scheduledTime: initialTask?.scheduledTime ?? null,
       approvalMode,
       cadence: { every: cadenceEvery, unit: cadenceUnit },
       defaultPostType,
       defaultImageSize,
+      fallbackLocations: initialTask?.fallbackLocations ?? [],
+      fallbackNotes: initialTask?.fallbackNotes ?? "",
     });
     onOpenChange(false);
   };
@@ -97,13 +100,13 @@ export function TaskForm({ open, onOpenChange, initialTask, onSave }: TaskFormPr
             <div>
               <label className="text-xs font-medium text-zinc-400">Status</label>
               <div className="mt-1 flex gap-2">
-                {(["active", "paused"] as TaskStatus[]).map((s) => (
+                {(["running", "paused"] as TaskStatus[]).map((s) => (
                   <button
                     key={s}
                     onClick={() => setStatus(s)}
                     className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
                       status === s
-                        ? s === "active"
+                        ? s === "running"
                           ? "bg-emerald-900 text-emerald-300"
                           : "bg-yellow-900 text-yellow-300"
                         : "bg-zinc-800 text-zinc-500 hover:bg-zinc-700"

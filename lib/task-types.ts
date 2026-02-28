@@ -1,41 +1,57 @@
 import { PostType } from "./types";
 
 export type TaskApprovalMode = "manual" | "automatic";
-export type TaskStatus = "active" | "paused" | "archived";
+export type TaskStatus = "running" | "paused" | "archived";
 export type InspirationItemType = "own_image" | "copy_post" | "from_scratch";
 export type InspirationItemStatus = "pending" | "used" | "skipped";
 
 /**
  * Core Task definition
- * Tasks run on a cadence and auto-create posts using inspiration items
+ * Tasks run on a cadence — started/paused/resumed by the user
  */
 export interface Task {
   id: string;
   name: string;
   description: string;
+
+  // running = active scheduler; paused = scheduler stopped; archived = hidden
   status: TaskStatus;
 
   // Approval & automation
   approvalMode: TaskApprovalMode;
 
-  // Cadence (for display; "Run Now" button is primary trigger in POC)
+  // How often to post
   cadence: {
     every: number;        // e.g. 1 (daily), 7 (weekly)
     unit: "days" | "weeks";
   };
 
+  // Time of day to run (HH:MM, 24h, local time). Set when task is first started.
+  scheduledTime: string | null;  // e.g. "09:30" — null until first Start
+
   // Generation defaults for all posts created by this task
   defaultPostType: PostType;
   defaultImageSize: string;     // e.g. "portrait_4_3"
 
-  // Inspiration queue — used in order, falls back to from_scratch when empty
+  // Fallback configuration — used when inspiration queue is empty
+  fallbackLocations: FallbackLocation[];
+  fallbackNotes: string;
+
+  // Inspiration queue — own_image + copy_post items consumed in order
   inspirationItems: InspirationItem[];
 
   // Timestamps
   createdAt: string;
   updatedAt: string;
   lastRunAt: string | null;
-  nextRunAt: string | null;     // computed: lastRunAt + cadence
+  nextRunAt: string | null;     // next scheduled run; null when paused
+}
+
+// ─── Fallback Location ───────────────────────────────────────────────────────
+
+export interface FallbackLocation {
+  location: string;
+  weight: number;               // 1-10, higher = more likely
 }
 
 // ─── Inspiration Items ────────────────────────────────────────────────────────
@@ -44,43 +60,29 @@ export interface InspirationItemBase {
   id: string;
   type: InspirationItemType;
   status: InspirationItemStatus;
-  notes: string;               // free-text fed to Gemini as context
+  notes: string;
   usedAt: string | null;
 }
 
-/**
- * User's own image(s) — becomes the post or carousel slide 1
- * Images pre-uploaded to fal.ai CDN at creation time (safe for localStorage)
- */
 export interface OwnImageInspirationItem extends InspirationItemBase {
   type: "own_image";
-  imageUrls: string[];         // CDN URLs — 1 for single/story, 1 for carousel
+  imageUrls: string[];
   postType: PostType;
 }
 
-/**
- * Reference post(s) to recreate — uses brainstorm's "copy_post" mode
- * Images pre-uploaded to fal.ai CDN at creation time
- */
 export interface CopyPostInspirationItem extends InspirationItemBase {
   type: "copy_post";
-  imageUrls: string[];         // CDN URLs for generation
-  thumbnailUrl?: string;       // optional first image as thumbnail for list
+  imageUrls: string[];
+  thumbnailUrl?: string;
   postType: PostType;
 }
 
-/**
- * Fully AI-generated — uses brainstorm's "from_scratch" mode
- * Optional style mode and location overrides; null = let AI pick
- */
 export interface FromScratchInspirationItem extends InspirationItemBase {
   type: "from_scratch";
-  preferredStyleMode: string | null;   // e.g. "Beach / Coastal"
-  preferredLocation: string | null;    // e.g. "Travel: Southeast Asia"
+  preferredStyleMode: string | null;
+  preferredLocation: string | null;
   postType: PostType;
 }
-
-// ─── Union ────────────────────────────────────────────────────────────────────
 
 export type InspirationItem =
   | OwnImageInspirationItem
@@ -94,6 +96,6 @@ export interface TaskRunResult {
   postId: string | null;
   error: string | null;
   usedItem: InspirationItem | null;
-  wasFallback: boolean;        // true if queue was empty and from_scratch synthesized
-  log: string[];               // step-by-step execution log
+  wasFallback: boolean;
+  log: string[];
 }

@@ -20,7 +20,9 @@ import {
   Pencil,
   Check,
   X,
+  Sparkles,
 } from "lucide-react";
+import { CaptionHelperDialog } from "./CaptionHelperDialog";
 
 interface ContentPanelProps {
   post: PostPlan;
@@ -68,10 +70,12 @@ export function ContentPanel({ post, onUpdate }: ContentPanelProps) {
     setDraggedIndex(null);
   };
 
+  const selectedImageUrls = selectedImages.map((i) => i.url);
+
   return (
     <div className="space-y-4">
       {/* Post Details */}
-      <PostDetailsCompact post={post} onUpdate={onUpdate} />
+      <PostDetailsCompact post={post} onUpdate={onUpdate} selectedImageUrls={selectedImageUrls} />
 
       {/* Selected Images */}
       {selectedCount > 0 && (
@@ -174,15 +178,18 @@ export function ContentPanel({ post, onUpdate }: ContentPanelProps) {
 function PostDetailsCompact({
   post,
   onUpdate,
+  selectedImageUrls,
 }: {
   post: PostPlan;
   onUpdate: (post: PostPlan) => void;
+  selectedImageUrls: string[];
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState(post.title);
   const [description, setDescription] = useState(post.description);
   const [caption, setCaption] = useState(post.caption);
   const [hashtagsText, setHashtagsText] = useState(post.hashtags.join(", "));
+  const [captionHelperOpen, setCaptionHelperOpen] = useState(false);
 
   const handleSave = () => {
     onUpdate({
@@ -255,7 +262,17 @@ function PostDetailsCompact({
         </div>
 
         <div>
-          <label className="text-[10px] font-medium text-zinc-500">Caption</label>
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-medium text-zinc-500">Caption</label>
+            <button
+              type="button"
+              onClick={() => setCaptionHelperOpen(true)}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-violet-400 hover:bg-violet-950/30 hover:text-violet-300 transition-colors"
+            >
+              <Sparkles className="h-2.5 w-2.5" />
+              AI Helper
+            </button>
+          </div>
           <Textarea
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
@@ -263,6 +280,14 @@ function PostDetailsCompact({
             placeholder="Instagram caption"
           />
         </div>
+
+        <CaptionHelperDialog
+          open={captionHelperOpen}
+          onOpenChange={setCaptionHelperOpen}
+          currentCaption={caption}
+          imageUrls={selectedImageUrls}
+          onApplyCaption={(newCaption) => setCaption(newCaption)}
+        />
 
         <div>
           <label className="text-[10px] font-medium text-zinc-500">

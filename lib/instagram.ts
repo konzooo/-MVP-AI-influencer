@@ -291,19 +291,15 @@ export async function optimizeImageIfNeeded(imageUrl: string): Promise<string> {
     throw new Error("Image too large even after compression. Please use a smaller image.");
   }
 
-  // Re-upload to fal.ai storage
-  const base64 = `data:image/jpeg;base64,${optimized.toString("base64")}`;
-  const uploadRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/upload`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dataUri: base64 }),
-  });
-
-  if (!uploadRes.ok) {
-    throw new Error("Failed to upload optimized image");
+  // Re-upload to fal.ai storage using server-side upload
+  const { uploadToFalStorage } = await import("./fal");
+  const apiKey = process.env.FAL_KEY;
+  if (!apiKey) {
+    throw new Error("FAL_KEY not configured");
   }
 
-  const { url } = await uploadRes.json();
+  const base64 = `data:image/jpeg;base64,${optimized.toString("base64")}`;
+  const url = await uploadToFalStorage(base64, apiKey);
   return url;
 }
 

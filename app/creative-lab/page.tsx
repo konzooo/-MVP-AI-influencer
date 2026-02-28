@@ -79,15 +79,16 @@ export default function CreativeLabPage() {
       // Handle "from_own_images" differently
       if (creationMode === "from_own_images") {
         // Upload base64 images to fal storage to get persistent URLs
+        const { uploadToFalStorageClient } = await import("@/lib/fal-client");
         const uploadedUrls: string[] = [];
         for (const img of images) {
-          const uploadResp = await fetch("/api/upload", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dataUri: img }),
-          });
-          const uploadData = await uploadResp.json();
-          uploadedUrls.push(uploadData.error ? img : uploadData.url);
+          try {
+            const url = await uploadToFalStorageClient(img);
+            uploadedUrls.push(url);
+          } catch (err) {
+            console.error("Upload error:", err);
+            uploadedUrls.push(img);
+          }
         }
 
         // CAROUSEL: Use first image as slide 1, generate prompts for slides 2-4

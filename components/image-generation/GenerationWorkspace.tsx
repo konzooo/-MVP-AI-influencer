@@ -166,18 +166,15 @@ export function GenerationWorkspace({
 
     try {
       // Upload reference images first
+      const { uploadToFalStorageClient } = await import("@/lib/fal-client");
       const uploadedUrls: string[] = [];
       for (const img of promptData.referenceImages) {
-        const uploadResp = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dataUri: img }),
-        });
-        const uploadData = await uploadResp.json();
-        if (uploadData.error) {
+        try {
+          const url = await uploadToFalStorageClient(img);
+          uploadedUrls.push(url);
+        } catch (err) {
+          console.error("Upload error:", err);
           uploadedUrls.push(img);
-        } else {
-          uploadedUrls.push(uploadData.url);
         }
       }
 
