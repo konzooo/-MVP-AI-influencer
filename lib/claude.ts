@@ -55,9 +55,9 @@ interface ClaudeBrainstormRequest {
 export async function brainstormWithClaude(
   request: ClaudeBrainstormRequest
 ): Promise<any> {
-  const apiKey = process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    throw new Error("NEXT_PUBLIC_ANTHROPIC_API_KEY not configured");
+    throw new Error("ANTHROPIC_API_KEY not configured");
   }
 
   let userMessage = request.idea;
