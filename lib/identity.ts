@@ -29,6 +29,7 @@ export interface InfluencerIdentity {
   styleModes: StyleMode[];
   contentThemes: ContentTheme[];
   preferredLocations: string[];
+  locationExamples: string;
   captionTone: string;
   captionLanguage: string;
   emojiUsage: string;
@@ -187,6 +188,7 @@ export const DEFAULT_IDENTITY: InfluencerIdentity = {
     "Travel: South Africa",
     "Travel: Europe",
   ],
+  locationExamples: "Bedroom, Bathroom, Couch/Living Room, Beach & Sea, Coffee Shop, Car Interior, Southeast Asia, South Africa, Europe, or similar coastal/urban/travel destinations",
 
   captionTone: "casual, authentic, slightly mysterious — like she's sharing a moment, not performing",
   captionLanguage:
@@ -244,8 +246,6 @@ export function buildPersonaContext(identity: InfluencerIdentity): string {
 
   const contentThemesSummary = identity.contentThemes.map((theme) => `- ${theme.name}`).join(", ");
 
-  const locationsSummary = identity.preferredLocations.join(", ");
-
   const varietyRules = identity.varietyGuidelines.map((rule) => `- ${rule}`).join("\n");
 
   return `INFLUENCER PERSONA:
@@ -257,7 +257,7 @@ ${styleModesSummary}
 
 CONTENT THEMES: ${contentThemesSummary}
 
-PREFERRED LOCATIONS: ${locationsSummary}
+LOCATION EXAMPLES: ${identity.locationExamples}
 
 VOICE & TONE:
 Caption tone: ${identity.captionTone}

@@ -4,8 +4,8 @@ import { brainstormWithClaude } from "@/lib/claude";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as BrainstormRequest & { personaContext?: string; aiProvider?: string };
-    const { idea, images, creationMode, postType, personaContext, aiProvider } = body;
+    const body = (await request.json()) as BrainstormRequest & { personaContext?: string; aiProvider?: string; carouselStyle?: string };
+    const { idea, images, creationMode, postType, personaContext, aiProvider, carouselStyle } = body;
 
     if (!idea && (!images || images.length === 0)) {
       return NextResponse.json(
@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
           creationMode: creationMode || "from_scratch",
           postType: postType || "single_image",
           personaContext,
+          carouselStyle: (carouselStyle as "quick_snaps" | "curated_series") || undefined,
         });
         return NextResponse.json(plan);
       } catch (claudeError) {
@@ -47,7 +48,8 @@ export async function POST(request: NextRequest) {
         postType: postType || "single_image",
       },
       geminApiKey,
-      personaContext
+      personaContext,
+      (carouselStyle as "quick_snaps" | "curated_series") || undefined
     );
     return NextResponse.json(plan);
   } catch (error) {

@@ -91,6 +91,11 @@ export default function TransparencyPage() {
         <p className="mt-1 text-sm text-zinc-400">
           Complete visibility into all AI prompts, API parameters, and system configuration
         </p>
+        {data.lastUpdated && (
+          <p className="mt-2 text-xs text-zinc-600">
+            Prompts last updated: {data.lastUpdated}
+          </p>
+        )}
       </div>
 
       {/* Mode Toggle */}

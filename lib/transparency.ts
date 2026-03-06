@@ -6,6 +6,7 @@
  */
 
 export interface TransparencyData {
+  lastUpdated: string; // ISO date string, updated whenever prompts change
   geminiPrompts: {
     sharedPreamble: string;
     fromScratchPrompt: string;
@@ -51,6 +52,7 @@ export interface TransparencyData {
 }
 
 export const DEFAULT_TRANSPARENCY: TransparencyData = {
+  lastUpdated: "2026-03-03",
   geminiPrompts: {
     sharedPreamble: `You are an expert Instagram content strategist and creative director for an AI influencer account.
 
@@ -90,7 +92,8 @@ Return your response as valid JSON matching this exact structure:
   "notes": "Any additional notes, tips, or suggestions for the image generation step"
 }
 
-For carousels, generate multiple imagePrompts (one per slide) that form a cohesive set.
+For carousels, generate exactly 3 imagePrompts (one per slide) that form a cohesive set.
+{{CAROUSEL_STYLE_INSTRUCTION}}
 For stories, keep captions short/punchy and note it's vertical 9:16 format.
 
 Return ONLY the JSON object, no markdown code blocks or extra text.`,
@@ -101,7 +104,9 @@ CRITICAL RULE FOR TITLES: Write descriptive, specific titles that help the user 
 Examples of GOOD titles: "Santorini sunset, full body, white linen dress", "Cozy bedroom carousel, different poses, warm tones", "Coffee shop selfie, close-up, casual vibes"
 Examples of BAD titles: "Beach Post", "New Content", "Photo 1"
 
-Your job is to analyze reference images of existing Instagram posts and create a plan to RECREATE them with the user's AI character.
+Your job is to analyze reference images of existing Instagram posts and create a plan to RECREATE their setting, vibe, and mood with the user's AI character.
+
+The goal is NOT pixel-perfect copying — it's to capture the ESSENCE: the atmosphere, the feeling, the aesthetic signature that makes this post work. Our AI character should feel at home in that exact world.
 
 The user will upload one or more images of posts they want to replicate. For EACH image, you must:
 
@@ -114,31 +119,49 @@ The user will upload one or more images of posts they want to replicate. For EAC
    - Clothing & accessories (what they're wearing, style)
    - ALSO note the person's identity features (hair color/style, skin tone, distinguishing features) — but ONLY in the analysis, NOT in the generation prompt
 
-2. **Write an image generation prompt** that recreates everything EXCEPT the identity:
-   - Describe the exact pose, environment, lighting, composition, clothing, and mood
+2. **Write an image generation prompt** that recreates the atmosphere and scene — NOT the person's identity:
+   - Lead with the MOOD and SETTING — what world are we stepping into?
+   - Describe lighting with precision (e.g. "warm late-afternoon light streaming from the left, golden tones, soft shadows" not just "natural light")
+   - Describe the exact pose and composition
+   - Include specific clothing details
    - Reference the character as "the character from Figure 1" (the user's character reference will be Figure 1 during generation)
-   - Do NOT mention hair color, skin tone, facial features, or other identity-specific traits in the prompt
-   - This is critical: if the reference shows a blonde woman, do NOT write "blonde woman" in the prompt — that would conflict with the character reference
+   - Do NOT mention hair color, skin tone, facial features, eye color — the character reference handles all of that
+   - End with photographic style cues (e.g. "shot on 35mm, shallow depth of field, slightly grainy, editorial feel")
 
 Return your response as valid JSON matching this exact structure:
 {
-  "title": "Descriptive title (e.g. 'Mirror selfie recreation, gym outfit, bright lighting')",
-  "description": "1-2 sentence description of what we're recreating",
+  "title": "Descriptive title (e.g. 'Golden hour balcony, flowy sundress, editorial warmth')",
+  "description": "1-2 sentence description of the vibe and setting we're recreating",
   "caption": "Instagram caption text (engaging, on-brand, with line breaks as \\n)",
   "hashtags": ["hashtag1", "hashtag2", ...],
   "imagePrompts": [
     {
-      "prompt": "Detailed recreation prompt. Describes pose, environment, lighting, clothing, mood — references character as 'the character from Figure 1'. NO identity features.",
-      "referenceImageAnalysis": "Detailed structured analysis of the source image: pose, environment, composition, lighting, mood, clothing, AND the original person's identity features (for transparency only, not used in generation)"
+      "prompt": "Rich, atmospheric recreation prompt. Open with setting and mood. Precise lighting. Exact pose and composition. Specific clothing. Character referenced as 'the character from Figure 1'. Close with photographic style. NO identity features.",
+      "referenceImageAnalysis": "Deep structured analysis: setting, lighting (precise), color palette/grading, mood/atmosphere, pose, composition, clothing, textures, AND original person's identity features. This is shown to the user for transparency."
     }
   ],
-  "notes": "Differences to watch for, potential challenges, tips for getting the best result"
+  "notes": "Key atmospheric elements to nail, potential challenges, tips for the generation step"
 }
 
-For carousels with multiple source images, create one imagePrompt per source image, each with its own analysis.
+For single images (single post or story), create one imagePrompt.
 For stories, note the vertical 9:16 format.
 
-IMPORTANT: The referenceImageAnalysis is shown to the user for transparency so they can see what the AI detected. Include identity features there (hair color, etc.) so the user can verify the AI understood the image — but keep them OUT of the generation prompt.
+For carousels, ALWAYS generate exactly 3 imagePrompts — regardless of how many source images were provided:
+
+**If 1 source image was provided:**
+- Slide 1: full and rich recreation of the source image — nails the setting, lighting, mood, pose, and outfit in detail
+- Slides 2-3: SHORT variation prompts — different pose, angle, or expression in the same scene
+  - During generation, slide 1's generated image will be Figure 1 for slides 2-3. It already contains the full scene, outfit, and mood.
+  - Keep it to 1-2 sentences: describe only the variation. Do NOT re-describe the environment or outfit.
+  - Always end with: "Same scene, lighting, outfit, and mood as Figure 1."
+  - Example: "The character from Figure 1 with a relaxed smile, leaning slightly to one side. Same scene, lighting, outfit, and mood as Figure 1."
+
+**If multiple source images were provided (up to 3):**
+- One imagePrompt per source image, each as a full recreation of that specific image
+- Slide 1 prompt: full and rich
+- Slides 2-3: full recreation of their respective source image (not short variations — each has its own source to copy)
+
+IMPORTANT: The referenceImageAnalysis is shown to the user for transparency — include identity features there so they can verify what the AI detected. Keep them completely OUT of the generation prompt.
 
 Return ONLY the JSON object, no markdown code blocks or extra text.`,
 
@@ -176,19 +199,13 @@ CRITICAL RULE FOR TITLES: Write descriptive, specific titles that help the user 
 Examples of GOOD titles: "Santorini sunset, full body, white linen dress", "Cozy bedroom carousel, different poses, warm tones", "Coffee shop selfie, close-up, casual vibes"
 Examples of BAD titles: "Beach Post", "New Content", "Photo 1"
 
-The user has uploaded their own image that they want to use as the FIRST slide of an Instagram carousel. Your job is to:
+The user has uploaded their own image that they want to use as the FIRST slide of an Instagram carousel (3 slides total). Your job is to:
 
-1. **Analyze the uploaded image** — understand the setting, mood, style, colors, lighting, clothing, pose, and overall vibe
-2. **Generate 3 companion image prompts** for slides 2, 3, and 4 that would create a cohesive, visually consistent carousel
+1. **Analyze the uploaded image** — understand the setting, mood, style, colors, lighting, clothing, pose, and overall vibe. Provide a detailed structured description in referenceImageAnalysis.
+2. **Generate 2 companion image prompts** for slides 2 and 3 that create a cohesive, visually consistent carousel (variations of the original)
 3. **Generate post details** — title, description, caption, hashtags
 
-Guidelines for companion prompts:
-- Each prompt should vary in pose, angle, or framing — but maintain the same overall mood, style, lighting, and setting
-- Think like a photographer doing a mini photoshoot: different angles of the same scene, or a natural progression
-- Reference the character as "the character from Figure 1"
-- Do NOT describe facial features, hair color, or identity traits — the character reference handles that
-- Describe: scene, pose, composition, lighting, mood, clothing, technical qualities
-- Keep the same clothing/outfit across all slides unless the vibe suggests otherwise
+{{CAROUSEL_STYLE_INSTRUCTION}}
 
 Guidelines for captions:
 - Write in first person as the AI influencer
@@ -198,19 +215,17 @@ Guidelines for captions:
 
 Return your response as valid JSON matching this exact structure:
 {
-  "title": "Descriptive title (e.g. 'Rooftop golden hour, casual vibes, 4-slide set')",
+  "title": "Descriptive title (e.g. 'Rooftop golden hour, casual vibes, 3-slide set')",
   "description": "1-2 sentence description of the carousel concept",
   "caption": "Instagram caption text (engaging, on-brand, with line breaks as \\n)",
   "hashtags": ["hashtag1", "hashtag2", ...],
+  "referenceImageAnalysis": "Detailed structured description of the uploaded image: setting, mood, lighting, colors, clothing, pose, composition, style — everything the AI understood about the photo.",
   "imagePrompts": [
     {
-      "prompt": "Detailed prompt for slide 2. Reference character as 'the character from Figure 1'. Describe pose, environment, lighting, clothing, mood."
+      "prompt": "Companion prompt for slide 2."
     },
     {
-      "prompt": "Detailed prompt for slide 3. Reference character as 'the character from Figure 1'. Different angle/pose but same setting and mood."
-    },
-    {
-      "prompt": "Detailed prompt for slide 4. Reference character as 'the character from Figure 1'. Closing shot that completes the visual story."
+      "prompt": "Companion prompt for slide 3."
     }
   ],
   "notes": "Tips for maintaining visual consistency across the carousel"
@@ -259,6 +274,39 @@ Return ONLY the JSON object, no markdown code blocks or extra text.`,
   },
 };
 
+// ─── Carousel Style Instructions ─────────────────────────────────────────────
+// These replace the {{CAROUSEL_STYLE_INSTRUCTION}} placeholder in prompts.
+
+import type { CarouselStyle } from "./ai-settings";
+
+const CAROUSEL_STYLE_INSTRUCTIONS: Record<CarouselStyle, string> = {
+  quick_snaps: `Guidelines for companion prompts (slides 2-3):
+- During generation, slide 1's generated image will be provided as Figure 1 for slides 2-3. It already contains the full scene, outfit, lighting, and mood.
+- Keep each prompt to 1-2 sentences: describe ONLY the pose/expression/angle change. Do NOT re-describe the environment, outfit, or lighting.
+- Always end with: "Same scene, lighting, outfit, and mood as Figure 1."
+- Think: 3 quick snaps taken moments apart — same place, same outfit, just different poses and expressions.
+- Reference the character as "the character from Figure 1"
+- Do NOT describe facial features, hair color, or identity traits — the character reference handles that
+- Example: "The character from Figure 1 looking over her shoulder with a playful smile. Same scene, lighting, outfit, and mood as Figure 1."
+- Example: "The character from Figure 1 leaning against the wall, eyes closed, serene expression. Same scene, lighting, outfit, and mood as Figure 1."`,
+
+  curated_series: `Guidelines for companion prompts (slides 2-3):
+- Each prompt should vary in pose, angle, or framing — but maintain the same overall mood, style, lighting, and setting
+- Think like a photographer doing a curated mini-shoot: each slide is a distinct, carefully composed shot
+- Reference the character as "the character from Figure 1"
+- Do NOT describe facial features, hair color, or identity traits — the character reference handles that
+- Describe: scene, pose, composition, lighting, mood, clothing, technical qualities
+- Keep the same clothing/outfit across all slides unless the vibe suggests otherwise
+- Each prompt should be detailed enough to stand on its own while maintaining visual cohesion with slide 1`,
+};
+
+/**
+ * Resolves {{CAROUSEL_STYLE_INSTRUCTION}} placeholders in a prompt string.
+ */
+export function resolveCarouselStyle(prompt: string, style: CarouselStyle): string {
+  return prompt.replace("{{CAROUSEL_STYLE_INSTRUCTION}}", CAROUSEL_STYLE_INSTRUCTIONS[style]);
+}
+
 /**
  * Load transparency config from localStorage
  */
@@ -267,7 +315,10 @@ export function loadTransparency(): TransparencyData {
     if (typeof window === "undefined") return DEFAULT_TRANSPARENCY;
     const stored = localStorage.getItem("ai-influencer-transparency");
     if (!stored) return DEFAULT_TRANSPARENCY;
-    return JSON.parse(stored);
+    const parsed = JSON.parse(stored);
+    // Ensure lastUpdated is always present (backfill for older stored configs)
+    if (!parsed.lastUpdated) parsed.lastUpdated = DEFAULT_TRANSPARENCY.lastUpdated;
+    return parsed;
   } catch {
     return DEFAULT_TRANSPARENCY;
   }

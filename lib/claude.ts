@@ -1,14 +1,14 @@
 import { CreationMode, PostType } from "./types";
+import { resolveCarouselStyle } from "./transparency";
+import type { CarouselStyle } from "./ai-settings";
 
 // ─── System Prompts ──────────────────────────────────────────────────────────
 
-const SHARED_PREAMBLE = `You are an expert Instagram content strategist and creative director for an AI influencer account.
+const FROM_SCRATCH_PROMPT = `You are an expert Instagram content strategist and creative director for an AI influencer account.
 
 CRITICAL RULE FOR TITLES: Write descriptive, specific titles that help the user quickly identify what the post is about.
 Examples of GOOD titles: "Santorini sunset, full body, white linen dress", "Cozy bedroom carousel, different poses, warm tones", "Coffee shop selfie, close-up, casual vibes"
-Examples of BAD titles: "Beach Post", "New Content", "Photo 1"`;
-
-const FROM_SCRATCH_PROMPT = `${SHARED_PREAMBLE}
+Examples of BAD titles: "Beach Post", "New Content", "Photo 1"
 
 Your job is to take rough ideas and turn them into complete, actionable post plans.
 
@@ -36,7 +36,8 @@ Return your response as valid JSON matching this exact structure:
   "notes": "Any additional notes, tips, or suggestions for the image generation step"
 }
 
-For carousels, generate multiple imagePrompts (one per slide) that form a cohesive set.
+For carousels, generate exactly 3 imagePrompts (one per slide) that form a cohesive set.
+{{CAROUSEL_STYLE_INSTRUCTION}}
 For stories, keep captions short/punchy and note it's vertical 9:16 format.
 
 Return ONLY the JSON object, no markdown code blocks or extra text.`;
@@ -48,6 +49,7 @@ interface ClaudeBrainstormRequest {
   creationMode: CreationMode;
   postType: PostType;
   personaContext?: string;
+  carouselStyle?: CarouselStyle;
 }
 
 export async function brainstormWithClaude(
@@ -60,14 +62,14 @@ export async function brainstormWithClaude(
 
   let userMessage = request.idea;
   if (request.postType === "carousel") {
-    userMessage += `\n\nPost type: Instagram carousel (4 slides). Generate 4 image prompts (one per slide).`;
+    userMessage += `\n\nPost type: Instagram carousel (3 slides). Generate exactly 3 image prompts (one per slide).`;
   } else if (request.postType === "story") {
     userMessage += `\n\nPost type: Instagram story (vertical 9:16 format). Generate 1 concise image prompt.`;
   } else {
     userMessage += `\n\nPost type: ${request.postType}. Generate 1 image prompt.`;
   }
 
-  let systemPrompt = FROM_SCRATCH_PROMPT;
+  let systemPrompt = resolveCarouselStyle(FROM_SCRATCH_PROMPT, request.carouselStyle || "quick_snaps");
   if (request.personaContext) {
     systemPrompt = `${request.personaContext}\n\n${systemPrompt}`;
   }

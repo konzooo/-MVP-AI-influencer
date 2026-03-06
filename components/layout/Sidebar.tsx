@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Lightbulb, ImageIcon, Send, Menu, Images, Coins, Instagram, User, Eye, Zap, Plus, Brain } from "lucide-react";
+import { LayoutDashboard, Menu, Images, Coins, Instagram, User, Eye, Zap, Plus, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loadTasks, getDueTasks } from "@/lib/task-store";
 import { Task } from "@/lib/task-types";
@@ -23,25 +23,10 @@ import { AISettingsDialog } from "@/components/settings/AISettingsDialog";
 
 const navItems = [
   {
-    label: "Ideation",
-    href: "/creative-lab",
-    icon: Lightbulb,
-    step: 1,
-    description: "Brainstorm & plan posts",
-  },
-  {
-    label: "Image Generation",
-    href: "/image-generation",
-    icon: ImageIcon,
-    step: 2,
-    description: "Create visuals",
-  },
-  {
-    label: "Post Manager",
-    href: "/post-manager",
-    icon: Send,
-    step: 3,
-    description: "Review & publish",
+    label: "Dashboard",
+    href: "/",
+    icon: LayoutDashboard,
+    description: "All posts & creation",
   },
 ];
 
@@ -126,12 +111,9 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4">
-          <p className="mb-3 px-2 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-            Pipeline
-          </p>
           <ul className="space-y-1">
             {navItems.map((item) => {
-              const isActive = pathname.startsWith(item.href);
+              const isActive = pathname === item.href;
               return (
                 <li key={item.href}>
                   <Link
@@ -143,16 +125,12 @@ export function Sidebar() {
                         : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
                     )}
                   >
-                    <div
+                    <item.icon
                       className={cn(
-                        "flex h-6 w-6 items-center justify-center rounded-md text-xs font-semibold",
-                        isActive
-                          ? "bg-violet-600 text-white"
-                          : "bg-zinc-800 text-zinc-400"
+                        "h-4 w-4",
+                        isActive ? "text-violet-400" : "text-zinc-500"
                       )}
-                    >
-                      {item.step}
-                    </div>
+                    />
                     <div className="flex-1">
                       <span className="block font-medium">{item.label}</span>
                       <span className="block text-[10px] text-zinc-500">

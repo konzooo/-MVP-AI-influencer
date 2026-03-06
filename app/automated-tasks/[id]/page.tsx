@@ -7,16 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Plus, Play, Pause, RotateCcw, Pencil, Trash2 } from "lucide-react";
 import { getTaskById, saveTask, deleteTask } from "@/lib/task-store";
-import { loadPosts, savePost } from "@/lib/store";
+import { loadPosts, deletePost } from "@/lib/store";
 import { Task, InspirationItem } from "@/lib/task-types";
-import { PostPlan } from "@/lib/types";
-import { runTask, generatePostImages } from "@/lib/task-runner";
+import { runTask } from "@/lib/task-runner";
 import { dispatchTasksUpdated } from "@/lib/task-events";
 import { TaskFormInline } from "@/components/automated-tasks/TaskFormInline";
 import { AddItemDialog } from "@/components/automated-tasks/AddItemDialog";
 import { InspirationQueue } from "@/components/automated-tasks/InspirationQueue";
 import { TaskRunLog } from "@/components/automated-tasks/TaskRunLog";
-import { TaskPostModal } from "@/components/post-manager/TaskPostModal";
+import { PostViewModal } from "@/components/post-view/PostViewModal";
 
 type RunStatus = "idle" | "running" | "done" | "error";
 
@@ -29,7 +28,8 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [showAddItem, setShowAddItem] = useState(false);
   const [runStatus, setRunStatus] = useState<RunStatus>("idle");
   const [runLog, setRunLog] = useState<string[]>([]);
-  const [modalPost, setModalPost] = useState<PostPlan | null>(null);
+  const [modalPostId, setModalPostId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const refresh = () => {
     const t = getTaskById(id);
@@ -199,103 +199,11 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     }
   };
 
-  // ─── Post modal handlers ────────────────────────────────────────────────────
-
-  const handleApprovePost = async (post: PostPlan) => {
-    // Set approved and save
-    const approved = { ...post, status: "approved" as const, updatedAt: new Date().toISOString() };
-    savePost(approved);
-    setModalPost(approved);
-    toast.success("Post approved — starting image generation…");
-
-    // Determine style mode hint from the inspiration item
-    const item = task.inspirationItems.find((i) => i.id === post.taskItemId);
-    let styleModeHint: string | undefined;
-    if (item?.type === "from_scratch" && "preferredStyleMode" in item && item.preferredStyleMode) {
-      styleModeHint = item.preferredStyleMode;
-    }
-
-    // Run generation (updates post in localStorage, modal polls for progress)
-    const result = await generatePostImages(approved, {
-      imageSize: task.defaultImageSize,
-      styleModeHint,
-    });
-
-    // Refresh modal with final state
-    const fresh = loadPosts().find((p) => p.id === post.id);
-    if (fresh) setModalPost(fresh);
+  const handleDeletePost = (postId: string) => {
+    deletePost(postId);
+    setDeleteConfirmId(null);
     refresh();
-
-    if (result.success) {
-      toast.success("Images generated — post is ready for review");
-    } else {
-      toast.error(`Generation failed: ${result.error}`);
-    }
-  };
-
-  const handlePublishPost = async (post: PostPlan) => {
-    const selectedImages = post.generatedImages.filter((g) => g.selected);
-    if (selectedImages.length === 0) {
-      toast.error("No images selected for publishing");
-      return;
-    }
-
-    // Set publishing status
-    const publishing = {
-      ...post,
-      status: "publishing" as const,
-      publishingInfo: { status: "publishing" as const },
-    };
-    savePost(publishing);
-    setModalPost(publishing);
-
-    try {
-      const res = await fetch("/api/instagram/publish", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageUrls: selectedImages.map((img) => img.url),
-          caption: post.caption,
-          hashtags: post.hashtags,
-          postType: post.postType,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok || data.error) {
-        const failed = { ...post, status: "ready" as const, publishingInfo: { status: "failed" as const, error: data.error || "Publishing failed" } };
-        savePost(failed);
-        setModalPost(failed);
-        toast.error(data.error || "Publishing failed");
-        return;
-      }
-
-      const posted = {
-        ...post,
-        status: "posted" as const,
-        publishingInfo: {
-          status: "published" as const,
-          igPostId: data.igPostId,
-          permalink: data.permalink,
-          publishedAt: new Date().toISOString(),
-        },
-      };
-      savePost(posted);
-      setModalPost(posted);
-      refresh();
-      toast.success("Published to Instagram!");
-    } catch (err) {
-      const failed = { ...post, status: "ready" as const };
-      savePost(failed);
-      setModalPost(failed);
-      toast.error(err instanceof Error ? err.message : "Publishing failed");
-    }
-  };
-
-  const handleModalPostUpdate = (updatedPost: PostPlan) => {
-    setModalPost(updatedPost);
-    refresh();
+    toast.success("Post deleted");
   };
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -514,30 +422,62 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               </h3>
               <div className="space-y-2">
                 {taskPosts.map((post) => (
-                  <div
-                    key={post.id}
-                    onClick={() => setModalPost(post)}
-                    className="flex cursor-pointer items-center justify-between rounded bg-zinc-800/50 px-3 py-2 transition-colors hover:bg-zinc-800"
-                  >
-                    <div>
-                      <p className="text-sm text-zinc-200">{post.title || "(untitled)"}</p>
-                      <p className="text-[11px] text-zinc-500">
-                        {post.status} · {new Date(post.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <span
-                      className={`text-[10px] rounded px-2 py-0.5 font-medium ${
-                        post.status === "posted"
-                          ? "bg-emerald-950 text-emerald-400"
-                          : post.status === "ready"
-                            ? "bg-blue-950 text-blue-400"
-                            : post.status === "draft"
-                              ? "bg-zinc-700 text-zinc-300"
-                              : "bg-zinc-800 text-zinc-400"
-                      }`}
-                    >
-                      {post.status}
-                    </span>
+                  <div key={post.id} className="group relative">
+                    {deleteConfirmId === post.id ? (
+                      /* ── Inline delete confirmation ── */
+                      <div className="flex items-center justify-between rounded border border-red-800/50 bg-red-950/20 px-3 py-2">
+                        <p className="text-sm text-red-300">Delete "{post.title || "untitled"}"?</p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleDeletePost(post.id)}
+                            className="rounded bg-red-700 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-red-600 transition-colors"
+                          >
+                            Delete
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirmId(null)}
+                            className="rounded bg-zinc-700 px-2.5 py-1 text-[11px] font-medium text-zinc-300 hover:bg-zinc-600 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* ── Normal row ── */
+                      <div
+                        onClick={() => setModalPostId(post.id)}
+                        className="flex cursor-pointer items-center justify-between rounded bg-zinc-800/50 px-3 py-2 transition-colors hover:bg-zinc-800"
+                      >
+                        <div>
+                          <p className="text-sm text-zinc-200">{post.title || "(untitled)"}</p>
+                          <p className="text-[11px] text-zinc-500">
+                            {post.status} · {new Date(post.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-[10px] rounded px-2 py-0.5 font-medium ${
+                              post.status === "posted"
+                                ? "bg-emerald-950 text-emerald-400"
+                                : post.status === "ready"
+                                  ? "bg-blue-950 text-blue-400"
+                                  : post.status === "draft"
+                                    ? "bg-zinc-700 text-zinc-300"
+                                    : "bg-zinc-800 text-zinc-400"
+                            }`}
+                          >
+                            {post.status}
+                          </span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(post.id); }}
+                            className="rounded p-1 text-zinc-600 opacity-0 group-hover:opacity-100 hover:bg-red-950/40 hover:text-red-400 transition-all"
+                            title="Delete post"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -567,14 +507,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
         onAdd={handleAddItem}
       />
 
-      <TaskPostModal
-        post={modalPost}
+      <PostViewModal
+        postId={modalPostId}
         task={task}
-        open={!!modalPost}
-        onOpenChange={(open) => !open && setModalPost(null)}
-        onApprove={handleApprovePost}
-        onPublish={handlePublishPost}
-        onPostUpdate={handleModalPostUpdate}
+        open={!!modalPostId}
+        onOpenChange={(open) => { if (!open) setModalPostId(null); }}
+        onDelete={(postId) => { handleDeletePost(postId); setModalPostId(null); }}
       />
     </div>
   );

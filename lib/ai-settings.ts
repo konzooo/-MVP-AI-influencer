@@ -2,11 +2,21 @@
 
 export type AIProvider = "gemini" | "claude";
 
+/**
+ * Carousel style determines how companion slide prompts are generated:
+ * - "quick_snaps": Short prompts focused on pose/expression changes only.
+ *   Feels like 3 shots taken moments apart in the same scene.
+ * - "curated_series": Detailed prompts describing full scene variations.
+ *   Each slide is a distinct, carefully composed shot from the same shoot.
+ */
+export type CarouselStyle = "quick_snaps" | "curated_series";
+
 export interface AISettings {
   brainstormFromScratch: AIProvider;
   brainstormCopyPost: AIProvider;
   expandCarousel: AIProvider;
   captionHelper: AIProvider;
+  carouselStyle: CarouselStyle;
 }
 
 const DEFAULT_SETTINGS: AISettings = {
@@ -14,6 +24,7 @@ const DEFAULT_SETTINGS: AISettings = {
   brainstormCopyPost: "gemini",
   expandCarousel: "gemini",
   captionHelper: "gemini",
+  carouselStyle: "quick_snaps",
 };
 
 const SETTINGS_KEY = "ai-influencer-ai-settings";

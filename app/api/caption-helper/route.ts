@@ -67,7 +67,7 @@ Please write a new Instagram caption based on the image(s) and request above.`;
   }
 
   const geminiPayload = {
-    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
     contents: [{ role: "user", parts }],
     generationConfig: {
       temperature: 0.9,
@@ -76,7 +76,7 @@ Please write a new Instagram caption based on the image(s) and request above.`;
   };
 
   const geminiRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

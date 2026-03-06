@@ -54,6 +54,7 @@ export async function generatePostImages(
   options: {
     imageSize: string;
     styleModeHint?: string;
+    signal?: AbortSignal;
   }
 ): Promise<GeneratePostResult> {
   const log = createLog();
@@ -63,43 +64,100 @@ export async function generatePostImages(
     post.status = "generating";
     savePostState(post);
 
-    log.add(`Fetching reference library for character reference...`);
-    const refsRes = await fetch("/api/reference-images");
-    if (!refsRes.ok) {
-      result.error = "Could not fetch reference library";
-      log.add(`ERROR: ${result.error}`);
-      return result;
+    // Resolve character references — use stored refs if available, otherwise select fresh
+    // Supports new multi-ref format (characterRefs[]) and legacy single ref
+    let charRefPaths: { id: string; path: string }[] = [];
+
+    if (post.characterRefs && post.characterRefs.length > 0) {
+      charRefPaths = post.characterRefs;
+      log.add(`Using ${charRefPaths.length} stored character reference(s): ${charRefPaths.map(r => r.id).join(", ")}`);
+    } else if (post.selectedCharacterRefId && post.selectedCharacterRefPath) {
+      // Legacy single ref
+      charRefPaths = [{ id: post.selectedCharacterRefId, path: post.selectedCharacterRefPath }];
+      log.add(`Using stored character reference (legacy): ${post.selectedCharacterRefId}`);
+    } else {
+      log.add(`No stored ref — fetching reference library...`);
+      const refsRes = await fetch("/api/reference-images");
+      if (!refsRes.ok) {
+        result.error = "Could not fetch reference library";
+        log.add(`ERROR: ${result.error}`);
+        return result;
+      }
+
+      const refsData = await refsRes.json();
+      const refs: ReferenceImage[] = refsData.images || [];
+      if (refs.length === 0) {
+        result.error = "No character references in library";
+        log.add(`ERROR: ${result.error}`);
+        return result;
+      }
+
+      let refContext = buildContextFromStyleMode(post.title);
+      if (options.styleModeHint) {
+        refContext = buildContextFromStyleMode(options.styleModeHint);
+      }
+
+      const charRef = selectCharacterReference(refs, refContext);
+      if (!charRef) {
+        result.error = "Failed to select character reference";
+        log.add(`ERROR: ${result.error}`);
+        return result;
+      }
+
+      charRefPaths = [{ id: charRef.id, path: charRef.imagePath }];
+
+      // Persist selection on the post so it's stable for future runs
+      post.selectedCharacterRefId = charRef.id;
+      post.selectedCharacterRefPath = charRef.imagePath;
+      post.characterRefs = charRefPaths;
+      savePostState(post);
+
+      log.add(`Selected character reference: ${charRef.id}`);
     }
 
-    const refs: ReferenceImage[] = await refsRes.json();
-    if (refs.length === 0) {
-      result.error = "No character references in library";
-      log.add(`ERROR: ${result.error}`);
-      return result;
-    }
-
-    // Select character reference based on post context
-    let refContext = buildContextFromStyleMode(post.title);
-    if (options.styleModeHint) {
-      refContext = buildContextFromStyleMode(options.styleModeHint);
-    }
-
-    const charRef = selectCharacterReference(refs, refContext);
-    if (!charRef) {
-      result.error = "Failed to select character reference";
-      log.add(`ERROR: ${result.error}`);
-      return result;
-    }
-
-    log.add(`Selected character reference: ${charRef.id}`);
-
+    // Upload all character references to fal storage so they're publicly accessible
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-    const charRefUrl = `${baseUrl}${charRef.imagePath}`;
+    const charRefUrls: string[] = [];
+
+    for (const ref of charRefPaths) {
+      log.add(`Uploading character reference ${ref.id} to fal storage...`);
+      try {
+        let refBase64: string;
+        if (ref.path.startsWith("data:")) {
+          // Already a base64 data URI (user-uploaded image)
+          refBase64 = ref.path;
+        } else {
+          // Server path — fetch and convert to base64
+          const localRefUrl = `${baseUrl}${ref.path}`;
+          const refRes = await fetch(localRefUrl);
+          if (!refRes.ok) throw new Error(`Failed to fetch reference image: ${refRes.status}`);
+          const refBlob = await refRes.blob();
+          const refBuffer = Buffer.from(await refBlob.arrayBuffer());
+          refBase64 = `data:${refBlob.type || "image/jpeg"};base64,${refBuffer.toString("base64")}`;
+        }
+        const uploadedUrl = await uploadToFalStorage(refBase64, process.env.FAL_KEY!);
+        charRefUrls.push(uploadedUrl);
+        log.add(`Character reference uploaded: ${uploadedUrl.slice(0, 60)}...`);
+      } catch (err) {
+        result.error = `Failed to upload character reference ${ref.id}: ${err instanceof Error ? err.message : "Unknown error"}`;
+        log.add(`ERROR: ${result.error}`);
+        return result;
+      }
+    }
 
     // For carousels: track slide 0's generated URL for cascading
     let slide0GeneratedUrl: string | null = null;
 
     for (let promptIdx = 0; promptIdx < post.imagePrompts.length; promptIdx++) {
+      // Check for cancellation
+      if (options.signal?.aborted) {
+        result.error = "Generation stopped by user";
+        log.add("Generation stopped by user");
+        post.status = "draft";
+        savePostState(post);
+        return result;
+      }
+
       const prompt = post.imagePrompts[promptIdx];
 
       // Skip userProvided prompt (own_image carousel slide 1)
@@ -122,12 +180,21 @@ export async function generatePostImages(
       }
 
       // Prepare reference URLs for this prompt
-      const referenceUrls: string[] = [charRefUrl];
+      // For carousel slides 2+: once slide 1 is generated, use it as the primary
+      // consistency reference instead of the character ref — the generated image
+      // already embeds the character's identity and the scene/outfit, so adding
+      // the original character ref would introduce conflicting style signals.
+      const isCarouselFollowSlide =
+        post.postType === "carousel" && promptIdx > 0 && slide0GeneratedUrl !== null;
 
-      // Cascade slide 0 into subsequent carousel slides
-      if (post.postType === "carousel" && promptIdx > 0 && slide0GeneratedUrl) {
-        referenceUrls.push(slide0GeneratedUrl);
-        log.add(`Cascading slide 1 image as reference for slide ${promptIdx + 1}`);
+      let referenceUrls: string[];
+      if (isCarouselFollowSlide) {
+        // Slide 1 generated image is the sole reference — it anchors identity, scene, outfit, and mood
+        referenceUrls = [slide0GeneratedUrl!];
+        log.add(`Slide ${promptIdx + 1}: using slide 1 image as reference (dropping character ref for consistency)`);
+      } else {
+        // Slide 1 or single image: all character references
+        referenceUrls = [...charRefUrls];
       }
 
       // Add per-prompt references
@@ -153,6 +220,7 @@ export async function generatePostImages(
             numImages: 1,
             maxImages: 1,
           }),
+          signal: options.signal,
         });
 
         if (!generateRes.ok) {
@@ -195,19 +263,45 @@ export async function generatePostImages(
         // Save after each image so the UI can poll progress
         savePostState(post);
       } catch (err) {
+        // If aborted, stop immediately and reset to draft
+        if (err instanceof DOMException && err.name === "AbortError") {
+          result.error = "Generation stopped by user";
+          log.add("Generation stopped by user");
+          post.status = "draft";
+          savePostState(post);
+          return result;
+        }
         log.add(
           `ERROR generating prompt ${promptIdx}: ${err instanceof Error ? err.message : "Unknown error"}`
         );
       }
     }
 
+    // Only mark as ready if at least one image was generated (excluding user-provided)
+    const generatedCount = post.generatedImages.filter((g) => !g.userProvided).length;
+    if (generatedCount === 0) {
+      post.status = "draft";
+      savePostState(post);
+      result.error = "All image generations failed — no images produced";
+      log.add(`ERROR: ${result.error}`);
+      return result;
+    }
+
     post.status = "ready";
     savePostState(post);
-    log.add(`Status: ready`);
+    log.add(`Status: ready (${generatedCount} images generated)`);
 
     result.success = true;
     return result;
   } catch (err) {
+    // Handle abort at top level too
+    if (err instanceof DOMException && err.name === "AbortError") {
+      result.error = "Generation stopped by user";
+      log.add("Generation stopped by user");
+      post.status = "draft";
+      savePostState(post);
+      return result;
+    }
     const msg = err instanceof Error ? err.message : "Unknown error";
     result.error = msg;
     log.add(`EXCEPTION: ${msg}`);
@@ -285,6 +379,7 @@ export async function runTask(
             image: selectedItem.imageUrls[0],
             notes: selectedItem.notes,
             personaContext,
+            carouselStyle: loadAISettings().carouselStyle,
           }),
         });
 
@@ -298,15 +393,11 @@ export async function runTask(
         const expandPlan = await expandRes.json();
         post = createEmptyPost("from_own_images", "carousel");
         Object.assign(post, expandPlan);
-        post.status = "approved"; // needs generation for slides 2-4
+        post.status = "approved"; // needs generation for slides 2-3
 
-        // Inject user's own image as reference for all companion slides (2-4)
-        // so generation stays visually consistent with the original photo
-        post.imagePrompts = post.imagePrompts.map((p, idx) =>
-          idx === 0
-            ? p
-            : { ...p, referenceImages: [selectedItem.imageUrls[0], ...(p.referenceImages ?? [])] }
-        );
+        // No need to inject per-prompt references here — the generation loop
+        // automatically uses slide 1's image (userProvided) as the sole reference
+        // for companion slides via slide0GeneratedUrl cascading.
 
         log.add(
           `Expand carousel complete: "${post.title}" with ${post.imagePrompts.length} prompts`
@@ -419,6 +510,7 @@ export async function runTask(
           postType: selectedItem.postType,
           personaContext,
           aiProvider: aiSettings.brainstormFromScratch,
+          carouselStyle: aiSettings.carouselStyle,
         }),
       });
 
@@ -438,10 +530,42 @@ export async function runTask(
       );
     }
 
-    // ─── Step 4: Attach task metadata ──────────────────────────────────────────
+    // ─── Step 4: Attach task metadata + select character reference ─────────────
 
     post.taskId = task.id;
     post.taskItemId = selectedItem.id;
+
+    // Select and persist character reference at draft creation time
+    // (so it stays consistent across modal opens and generation)
+    if (post.creationMode !== "from_own_images") {
+      try {
+        const refsRes = await fetch("/api/reference-images");
+        if (refsRes.ok) {
+          const refsData = await refsRes.json();
+          const refs: ReferenceImage[] = refsData.images || [];
+          if (refs.length > 0) {
+            let refContext;
+            if (selectedItem.type === "from_scratch") {
+              const item = selectedItem as FromScratchInspirationItem;
+              refContext = item.preferredStyleMode
+                ? buildContextFromStyleMode(item.preferredStyleMode)
+                : buildContextFromKeywords([post.title, post.description].filter(Boolean).join(" "));
+            } else {
+              refContext = buildContextFromKeywords([post.title, post.description, post.caption].filter(Boolean).join(" "));
+            }
+            const charRef = selectCharacterReference(refs, refContext);
+            if (charRef) {
+              post.selectedCharacterRefId = charRef.id;
+              post.selectedCharacterRefPath = charRef.imagePath;
+              post.characterRefs = [{ id: charRef.id, path: charRef.imagePath }];
+              log.add(`Character reference selected: ${charRef.id}`);
+            }
+          }
+        }
+      } catch (err) {
+        log.add(`WARNING: Could not pre-select character reference: ${err instanceof Error ? err.message : "unknown"}`);
+      }
+    }
 
     // ─── Step 5: Manual mode — stop here ──────────────────────────────────────
 
