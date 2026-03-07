@@ -1,41 +1,94 @@
 "use client";
 
 import { Task } from "./task-types";
+import { createClient } from "./supabase/client";
 
 const TASKS_KEY = "ai-influencer-tasks";
 
-/**
- * Load all tasks from localStorage
- */
-export function loadTasks(): Task[] {
+// ─── Local storage helpers ────────────────────────────────────────────────────
+
+function loadTasksLocal(): Task[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(TASKS_KEY);
     if (!raw) return [];
     return JSON.parse(raw);
-  } catch (error) {
-    console.error("Failed to load tasks:", error);
+  } catch {
     return [];
   }
 }
 
-/**
- * Save all tasks to localStorage
- */
-export function saveTasks(tasks: Task[]): void {
+function saveTasksLocal(tasks: Task[]): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
-  } catch (error) {
-    console.error("Failed to save tasks:", error);
+  } catch {
+    console.error("Failed to save tasks to localStorage");
   }
 }
 
-/**
- * Save or update a single task
- */
+// ─── Remote (Supabase) ────────────────────────────────────────────────────────
+
+async function getUserId(): Promise<string | null> {
+  try {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    return user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveTaskRemote(task: Task): Promise<void> {
+  const userId = await getUserId();
+  if (!userId) return;
+
+  const supabase = createClient();
+  await supabase.from("tasks").upsert({
+    id: task.id,
+    user_id: userId,
+    data: task,
+    status: task.status,
+    created_at: task.createdAt,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+export async function deleteTaskRemote(id: string): Promise<void> {
+  const userId = await getUserId();
+  if (!userId) return;
+
+  const supabase = createClient();
+  await supabase.from("tasks").delete().eq("id", id).eq("user_id", userId);
+}
+
+export async function loadTasksRemote(): Promise<Task[]> {
+  const userId = await getUserId();
+  if (!userId) return [];
+
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("data")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false });
+
+  if (error || !data) return [];
+  return data.map((row) => row.data as Task);
+}
+
+// ─── Public API (same signatures as before) ───────────────────────────────────
+
+export function loadTasks(): Task[] {
+  return loadTasksLocal();
+}
+
+export function saveTasks(tasks: Task[]): void {
+  saveTasksLocal(tasks);
+}
+
 export function saveTask(task: Task): void {
-  const tasks = loadTasks();
+  const tasks = loadTasksLocal();
   const idx = tasks.findIndex((t) => t.id === task.id);
   const updated = { ...task, updatedAt: new Date().toISOString() };
 
@@ -45,34 +98,31 @@ export function saveTask(task: Task): void {
     tasks.unshift(updated);
   }
 
-  saveTasks(tasks);
+  saveTasksLocal(tasks);
+
+  // Async remote save
+  saveTaskRemote(updated).catch((err) =>
+    console.error("[task-store] Remote save failed:", err)
+  );
 }
 
-/**
- * Delete a task by ID
- */
 export function deleteTask(id: string): void {
-  const tasks = loadTasks().filter((t) => t.id !== id);
-  saveTasks(tasks);
+  const tasks = loadTasksLocal().filter((t) => t.id !== id);
+  saveTasksLocal(tasks);
+
+  deleteTaskRemote(id).catch((err) =>
+    console.error("[task-store] Remote delete failed:", err)
+  );
 }
 
-/**
- * Get a single task by ID
- */
 export function getTaskById(id: string): Task | undefined {
-  return loadTasks().find((t) => t.id === id);
+  return loadTasksLocal().find((t) => t.id === id);
 }
 
-/**
- * Get all running (scheduled) tasks
- */
 export function getActiveTasks(): Task[] {
-  return loadTasks().filter((t) => t.status === "running");
+  return loadTasksLocal().filter((t) => t.status === "running");
 }
 
-/**
- * Get all tasks due for execution (nextRunAt is now or in the past)
- */
 export function getDueTasks(): Task[] {
   const now = new Date();
   return getActiveTasks().filter(
@@ -80,10 +130,6 @@ export function getDueTasks(): Task[] {
   );
 }
 
-/**
- * Compute next run time based on task cadence.
- * Preserves the scheduledTime (HH:MM) so runs happen at the same time each period.
- */
 export function computeNextRunAt(task: Task): string {
   const base = task.lastRunAt ? new Date(task.lastRunAt) : new Date();
   const next = new Date(base);
@@ -94,7 +140,6 @@ export function computeNextRunAt(task: Task): string {
     next.setDate(next.getDate() + task.cadence.every * 7);
   }
 
-  // Apply the fixed time-of-day from scheduledTime (HH:MM)
   if (task.scheduledTime) {
     const [hours, minutes] = task.scheduledTime.split(":").map(Number);
     next.setHours(hours, minutes, 0, 0);

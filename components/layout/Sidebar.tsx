@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Menu, Images, Coins, Instagram, User, Eye, Zap, Plus, Brain } from "lucide-react";
+import { LayoutDashboard, Menu, Images, Coins, Instagram, User, Eye, Zap, Plus, Brain, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loadTasks, getDueTasks } from "@/lib/task-store";
 import { Task } from "@/lib/task-types";
@@ -20,6 +20,8 @@ import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { CostIndicator } from "@/components/settings/CostIndicator";
 import { InstagramAccountDialog } from "@/components/post-manager/InstagramAccountSection";
 import { AISettingsDialog } from "@/components/settings/AISettingsDialog";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 
 const navItems = [
   {
@@ -32,6 +34,7 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [instagramOpen, setInstagramOpen] = useState(false);
@@ -100,6 +103,17 @@ export function Sidebar() {
                   <Eye className="h-4 w-4" />
                   Transparency & Config
                 </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={async () => {
+                  await createClient().auth.signOut();
+                  router.push("/login");
+                }}
+                className="text-red-400 focus:text-red-400"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign out
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

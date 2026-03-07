@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { PostPlan } from "@/lib/types";
-import { loadPosts, savePost, deletePost as deletePostFromStore } from "@/lib/store";
-import { POSTS_UPDATED_EVENT } from "@/lib/post-events";
+import { loadPosts, savePost, deletePost as deletePostFromStore, loadPostsRemote, savePosts } from "@/lib/store";
+import { POSTS_UPDATED_EVENT, dispatchPostsUpdated } from "@/lib/post-events";
 
 export function usePostStore() {
   const [posts, setPosts] = useState<PostPlan[]>([]);
@@ -12,9 +12,20 @@ export function usePostStore() {
     setPosts(loadPosts());
   }, []);
 
-  // Load on mount + listen for updates from any source
+  // Load on mount: show local immediately, then sync from Supabase
   useEffect(() => {
     refresh();
+
+    // Fetch from Supabase and sync local cache
+    loadPostsRemote().then((remote) => {
+      if (remote.length > 0) {
+        savePosts(remote);
+        setPosts(remote);
+      }
+    }).catch(() => {
+      // Supabase unavailable, local data is fine
+    });
+
     const handler = () => refresh();
     window.addEventListener(POSTS_UPDATED_EVENT, handler);
     return () => window.removeEventListener(POSTS_UPDATED_EVENT, handler);
