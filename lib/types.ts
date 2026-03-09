@@ -125,6 +125,10 @@ export interface ReferenceImage {
   filename: string;
   imagePath: string;
   thumbnailPath: string;
+  /** Convex storage URL (preferred when available) */
+  imageUrl?: string;
+  /** Convex storage thumbnail URL (preferred when available) */
+  thumbnailUrl?: string;
   summary: string;
   tags: string[];
   metadata: ReferenceImageMetadata;

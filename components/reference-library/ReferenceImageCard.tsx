@@ -3,6 +3,9 @@
 import { useState } from "react";
 import Image from "next/image";
 import { toast } from "sonner";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -27,6 +30,7 @@ export function ReferenceImageCard({
   selectable = false,
   selected = false
 }: ReferenceImageCardProps) {
+  const updateMeta = useMutation(api.referenceImages.updateMeta);
   const [imageError, setImageError] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -65,30 +69,25 @@ export function ReferenceImageCard({
   const handleSave = async () => {
     try {
       setIsSaving(true);
-      const response = await fetch(`/api/reference-images/${image.filename}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          summary: editData.summary,
-          tags: editData.tags,
-          metadata: {
-            schema_version: image.metadata.schema_version,
-            indoor_outdoor: editData.indoor_outdoor as any,
-            place: { type: editData.place_type, detail: editData.place_detail },
-            capture_method: editData.capture_method as any,
-            framing: editData.framing as any,
-            expression: {
-              type: editData.expression_type as any,
-              mouth: editData.expression_mouth as any,
-              detail: editData.expression_detail,
-            },
-            time_of_day: editData.time_of_day as any,
-            image_style: { color: editData.image_style_color as any, detail: editData.image_style_detail },
+      await updateMeta({
+        id: image.id as Id<"referenceImages">,
+        summary: editData.summary,
+        tags: editData.tags,
+        metadata: {
+          schema_version: image.metadata.schema_version,
+          indoor_outdoor: editData.indoor_outdoor,
+          place: { type: editData.place_type, detail: editData.place_detail },
+          capture_method: editData.capture_method,
+          framing: editData.framing,
+          expression: {
+            type: editData.expression_type,
+            mouth: editData.expression_mouth,
+            detail: editData.expression_detail,
           },
-        }),
+          time_of_day: editData.time_of_day,
+          image_style: { color: editData.image_style_color, detail: editData.image_style_detail },
+        },
       });
-
-      if (!response.ok) throw new Error('Failed to save');
       toast.success('Image details saved successfully');
       setIsEditMode(false);
     } catch (error) {
@@ -122,7 +121,7 @@ export function ReferenceImageCard({
     <div className="relative aspect-square overflow-hidden rounded-t-lg cursor-pointer bg-zinc-900">
       {!imageError ? (
         <Image
-          src={image.thumbnailPath}
+          src={image.thumbnailUrl || image.thumbnailPath}
           alt={image.summary}
           fill
           className="object-cover"
@@ -195,7 +194,7 @@ export function ReferenceImageCard({
           <div className="relative w-full max-h-[60vh] overflow-hidden rounded-lg bg-zinc-900 flex items-center justify-center">
             {!imageError ? (
               <Image
-                src={image.imagePath}
+                src={image.imageUrl || image.imagePath}
                 alt={image.summary}
                 width={1200}
                 height={800}

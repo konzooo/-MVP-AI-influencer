@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Task, TaskApprovalMode, FallbackLocation } from "@/lib/task-types";
 import { PostType } from "@/lib/types";
-import { loadIdentity } from "@/lib/identity";
+import { useSettings } from "@/hooks/use-settings";
 import { Plus, Minus, X } from "lucide-react";
 
 interface TaskFormInlineProps {
@@ -28,7 +28,7 @@ const IMAGE_SIZE_OPTIONS = [
 ];
 
 export function TaskFormInline({ initialTask, onSave, onCancel }: TaskFormInlineProps) {
-  const identity = loadIdentity();
+  const { identity } = useSettings();
 
   const [name, setName] = useState(initialTask?.name ?? "");
   const [description, setDescription] = useState(initialTask?.description ?? "");

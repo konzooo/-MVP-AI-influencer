@@ -6,11 +6,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Plus, Play, Pause, RotateCcw, Pencil, Trash2 } from "lucide-react";
-import { getTaskById, saveTask, deleteTask } from "@/lib/task-store";
-import { loadPosts, deletePost } from "@/lib/store";
+import { deletePostFromConvex as deletePost } from "@/lib/convex";
+import { usePostStore } from "@/hooks/use-post-store";
+import { useTaskStore } from "@/hooks/use-task-store";
 import { Task, InspirationItem } from "@/lib/task-types";
 import { runTask } from "@/lib/task-runner";
-import { dispatchTasksUpdated } from "@/lib/task-events";
 import { TaskFormInline } from "@/components/automated-tasks/TaskFormInline";
 import { AddItemDialog } from "@/components/automated-tasks/AddItemDialog";
 import { InspirationQueue } from "@/components/automated-tasks/InspirationQueue";
@@ -23,27 +23,26 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const router = useRouter();
 
-  const [task, setTask] = useState<Task | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
   const [runStatus, setRunStatus] = useState<RunStatus>("idle");
   const [runLog, setRunLog] = useState<string[]>([]);
   const [modalPostId, setModalPostId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const { posts: allPosts } = usePostStore();
+  const { getTaskById, updateTask: saveTask, deleteTask: deleteTaskFn } = useTaskStore();
 
-  const refresh = () => {
-    const t = getTaskById(id);
-    if (!t) {
-      router.replace("/automated-tasks");
-      return;
-    }
-    setTask(t);
-  };
+  const task = getTaskById(id) ?? null;
 
   useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+    if (task === null && getTaskById(id) === undefined) {
+      // Only redirect if we've loaded and task truly doesn't exist
+      // (not during initial loading when tasks array may be empty)
+    }
+  }, [id, task, getTaskById]);
+
+  // No-op refresh — Convex reactivity handles it
+  const refresh = () => {};
 
   if (!task) {
     return (
@@ -53,66 +52,59 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  const taskPosts = loadPosts().filter((p) => p.taskId === task.id);
+  const taskPosts = allPosts.filter((p) => p.taskId === task.id);
 
   // ─── Task CRUD ──────────────────────────────────────────────────────────────
 
-  const handleUpdateTask = (
+  const handleUpdateTask = async (
     fields: Omit<Task, "id" | "createdAt" | "updatedAt" | "lastRunAt" | "nextRunAt" | "inspirationItems">
   ) => {
     const updated: Task = { ...task, ...fields, updatedAt: new Date().toISOString() };
-    saveTask(updated);
-    setTask(updated);
+    await saveTask(updated);
     setIsEditing(false);
-    dispatchTasksUpdated();
     toast.success("Task updated");
   };
 
-  const handleDeleteTask = () => {
+  const handleDeleteTask = async () => {
     if (!window.confirm("Are you sure you want to delete this task? This cannot be undone.")) return;
-    deleteTask(task.id);
-    dispatchTasksUpdated();
+    await deleteTaskFn(task.id);
     toast.success("Task deleted");
     router.push("/automated-tasks");
   };
 
   // ─── Inspiration items ───────────────────────────────────────────────────────
 
-  const handleAddItem = (item: InspirationItem) => {
+  const handleAddItem = async (item: InspirationItem) => {
     const updated: Task = {
       ...task,
       inspirationItems: [...task.inspirationItems, item],
       updatedAt: new Date().toISOString(),
     };
-    saveTask(updated);
-    setTask(updated);
+    await saveTask(updated);
   };
 
-  const handleReorderItems = (items: InspirationItem[]) => {
+  const handleReorderItems = async (items: InspirationItem[]) => {
     const updated: Task = { ...task, inspirationItems: items, updatedAt: new Date().toISOString() };
-    saveTask(updated);
-    setTask(updated);
+    await saveTask(updated);
   };
 
-  const handleDeleteItem = (itemId: string) => {
+  const handleDeleteItem = async (itemId: string) => {
     const updated: Task = {
       ...task,
       inspirationItems: task.inspirationItems.filter((i) => i.id !== itemId),
       updatedAt: new Date().toISOString(),
     };
-    saveTask(updated);
-    setTask(updated);
+    await saveTask(updated);
   };
 
   // ─── Scheduler controls ──────────────────────────────────────────────────────
 
-  const handleStart = () => {
+  const handleStart = async () => {
     const now = new Date();
     const hh = String(now.getHours()).padStart(2, "0");
     const mm = String(now.getMinutes()).padStart(2, "0");
     const scheduledTime = `${hh}:${mm}`;
 
-    // Compute first nextRunAt: now + cadence at today's time
     const firstNext = new Date(now);
     if (task.cadence.unit === "days") {
       firstNext.setDate(firstNext.getDate() + task.cadence.every);
@@ -128,30 +120,25 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       nextRunAt: firstNext.toISOString(),
       updatedAt: now.toISOString(),
     };
-    saveTask(updated);
-    setTask(updated);
-    dispatchTasksUpdated();
+    await saveTask(updated);
     toast.success(`Scheduler started — runs every ${task.cadence.every} ${task.cadence.unit} at ${scheduledTime}`);
 
     // Run the first generation immediately
     handleRunNow(updated);
   };
 
-  const handlePause = () => {
+  const handlePause = async () => {
     const updated: Task = {
       ...task,
       status: "paused",
       nextRunAt: null,
       updatedAt: new Date().toISOString(),
     };
-    saveTask(updated);
-    setTask(updated);
-    dispatchTasksUpdated();
+    await saveTask(updated);
     toast.success("Scheduler paused");
   };
 
-  const handleResume = () => {
-    // Next run = now + cadence at the original scheduledTime
+  const handleResume = async () => {
     const now = new Date();
     const next = new Date(now);
     if (task.cadence.unit === "days") {
@@ -170,9 +157,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       nextRunAt: next.toISOString(),
       updatedAt: now.toISOString(),
     };
-    saveTask(updated);
-    setTask(updated);
-    dispatchTasksUpdated();
+    await saveTask(updated);
     toast.success(`Scheduler resumed — next run ${next.toLocaleString()}`);
   };
 
@@ -185,8 +170,6 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
     setRunLog(result.log);
     setRunStatus(result.success ? "done" : "error");
-    refresh();
-    dispatchTasksUpdated();
 
     if (result.success) {
       toast.success(
@@ -199,10 +182,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     }
   };
 
-  const handleDeletePost = (postId: string) => {
-    deletePost(postId);
+  const handleDeletePost = async (postId: string) => {
+    await deletePost(postId);
     setDeleteConfirmId(null);
-    refresh();
     toast.success("Post deleted");
   };
 

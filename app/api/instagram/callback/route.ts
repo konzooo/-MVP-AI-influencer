@@ -5,6 +5,7 @@ import {
   saveAuth,
   type InstagramAuth,
 } from "@/lib/instagram";
+import { ConvexHttpClient } from "convex/browser";
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,6 +21,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get("code");
     const error = searchParams.get("error");
+    // Convex auth token passed through OAuth state parameter
+    const convexToken = searchParams.get("state");
 
     if (error) {
       console.error("Instagram OAuth error:", error, searchParams.get("error_description"));
@@ -34,25 +37,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (!convexToken) {
+      return NextResponse.redirect(
+        new URL("/post-manager?ig_error=missing_auth", request.url)
+      );
+    }
+
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const redirectUri = `${baseUrl}/api/instagram/callback`;
 
-    // Exchange code for long-lived token
-    const { accessToken, userId } = await exchangeCodeForToken(
-      code,
-      appId,
-      appSecret,
-      redirectUri
-    );
-
-    // Fetch account info
+    const { accessToken, userId } = await exchangeCodeForToken(code, appId, appSecret, redirectUri);
     const { username, profilePictureUrl } = await fetchAccountInfo(userId, accessToken);
 
-    // Calculate token expiry (long-lived tokens last 60 days)
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 60);
 
-    // Save auth
     const auth: InstagramAuth = {
       accessToken,
       tokenExpiresAt: expiresAt.toISOString(),
@@ -62,7 +61,9 @@ export async function GET(request: NextRequest) {
       connectedAt: new Date().toISOString(),
     };
 
-    await saveAuth(auth);
+    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+    convex.setAuth(convexToken);
+    await saveAuth(convex, auth);
 
     return NextResponse.redirect(
       new URL("/post-manager?ig_connected=true", request.url)

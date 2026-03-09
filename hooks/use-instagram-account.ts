@@ -1,16 +1,26 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useAuthToken } from "@convex-dev/auth/react";
 import type { InstagramAccount } from "@/lib/instagram";
 
 export function useInstagramAccount() {
   const [account, setAccount] = useState<InstagramAccount>({ connected: false });
   const [loading, setLoading] = useState(true);
+  const token = useAuthToken();
+
+  const authHeaders = useCallback((): HeadersInit => {
+    return token ? { "x-convex-auth": token } : {};
+  }, [token]);
 
   const refresh = useCallback(async () => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const res = await fetch("/api/instagram/account");
+      const res = await fetch("/api/instagram/account", { headers: authHeaders() });
       if (res.ok) {
         const data = await res.json();
         setAccount(data);
@@ -22,7 +32,7 @@ export function useInstagramAccount() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token, authHeaders]);
 
   useEffect(() => {
     refresh();
@@ -30,7 +40,7 @@ export function useInstagramAccount() {
 
   const connect = useCallback(async () => {
     try {
-      const res = await fetch("/api/instagram/auth");
+      const res = await fetch("/api/instagram/auth", { headers: authHeaders() });
       if (res.ok) {
         const { authUrl } = await res.json();
         window.location.href = authUrl;
@@ -38,27 +48,27 @@ export function useInstagramAccount() {
     } catch (error) {
       console.error("Failed to initiate Instagram auth:", error);
     }
-  }, []);
+  }, [authHeaders]);
 
   const disconnect = useCallback(async () => {
     try {
-      await fetch("/api/instagram/disconnect", { method: "POST" });
+      await fetch("/api/instagram/disconnect", { method: "POST", headers: authHeaders() });
       setAccount({ connected: false });
     } catch (error) {
       console.error("Failed to disconnect Instagram:", error);
     }
-  }, []);
+  }, [authHeaders]);
 
   const refreshToken = useCallback(async () => {
     try {
-      const res = await fetch("/api/instagram/refresh-token", { method: "POST" });
+      const res = await fetch("/api/instagram/refresh-token", { method: "POST", headers: authHeaders() });
       if (res.ok) {
         await refresh();
       }
     } catch (error) {
       console.error("Failed to refresh token:", error);
     }
-  }, [refresh]);
+  }, [authHeaders, refresh]);
 
   return {
     account,

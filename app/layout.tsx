@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { ConvexClientProvider } from "./ConvexClientProvider";
+import { AuthGate } from "@/components/auth/AuthGate";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -29,11 +31,15 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >
-        <div className="flex h-screen overflow-hidden bg-zinc-950">
-          <Sidebar />
-          <main className="flex-1 overflow-auto">{children}</main>
-        </div>
-        <Toaster position="bottom-right" />
+        <ConvexClientProvider>
+          <AuthGate>
+            <div className="flex h-screen overflow-hidden bg-zinc-950">
+              <Sidebar />
+              <main className="flex-1 overflow-auto">{children}</main>
+            </div>
+            <Toaster position="bottom-right" />
+          </AuthGate>
+        </ConvexClientProvider>
       </body>
     </html>
   );

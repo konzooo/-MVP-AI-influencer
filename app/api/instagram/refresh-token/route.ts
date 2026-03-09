@@ -1,9 +1,13 @@
-import { NextResponse } from "next/server";
-import { loadAuth, saveAuth, refreshLongLivedToken, isTokenExpired, getTokenDaysRemaining } from "@/lib/instagram";
+import { NextRequest, NextResponse } from "next/server";
+import { loadAuth, updateAuthToken, refreshLongLivedToken, isTokenExpired, getTokenDaysRemaining } from "@/lib/instagram";
+import { convexClientFromRequest } from "@/lib/convex-server";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const convexOrError = convexClientFromRequest(request);
+  if (convexOrError instanceof NextResponse) return convexOrError;
+
   try {
-    const auth = await loadAuth();
+    const auth = await loadAuth(convexOrError);
     if (!auth) {
       return NextResponse.json(
         { error: "No Instagram account connected" },
@@ -22,18 +26,12 @@ export async function POST() {
     const expiresAt = new Date();
     expiresAt.setSeconds(expiresAt.getSeconds() + refreshed.expiresIn);
 
-    const updatedAuth = {
-      ...auth,
-      accessToken: refreshed.accessToken,
-      tokenExpiresAt: expiresAt.toISOString(),
-    };
-
-    await saveAuth(updatedAuth);
+    await updateAuthToken(convexOrError, refreshed.accessToken, expiresAt.toISOString());
 
     return NextResponse.json({
       success: true,
-      tokenExpiresAt: updatedAuth.tokenExpiresAt,
-      tokenDaysRemaining: getTokenDaysRemaining(updatedAuth),
+      tokenExpiresAt: expiresAt.toISOString(),
+      tokenDaysRemaining: getTokenDaysRemaining({ ...auth, tokenExpiresAt: expiresAt.toISOString() }),
     });
   } catch (error) {
     console.error("Token refresh error:", error);

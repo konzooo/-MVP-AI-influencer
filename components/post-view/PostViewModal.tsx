@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { PostPlan, ReferenceImage, ImagePrompt } from "@/lib/types";
 import { Task } from "@/lib/task-types";
-import { loadPosts, savePost } from "@/lib/store";
+import { savePostToConvex as savePost } from "@/lib/convex";
+import { usePostStore } from "@/hooks/use-post-store";
 import { usePostActions } from "@/hooks/use-post-actions";
 import { useInstagramAccount } from "@/hooks/use-instagram-account";
 import { canPublish as checkRateLimit } from "@/lib/instagram-rate-limit";
@@ -172,36 +173,20 @@ export function PostViewModal({
 
   const actions = usePostActions();
   const instagram = useInstagramAccount();
+  const { posts: allPosts } = usePostStore();
 
-  // ─── Load post ──────────────────────────────────────────────────────────────
+  // ─── Load post (reactive via Convex) ──────────────────────────────────────
 
   useEffect(() => {
     if (!open || !postId) {
       setPost(null);
       return;
     }
-
-    const found = loadPosts().find((p) => p.id === postId);
+    const found = allPosts.find((p) => p.id === postId);
     if (found) {
       setPost(found);
-      return;
     }
-
-    // Post not found yet — poll for new posts being created
-    let pollTimeout: NodeJS.Timeout;
-    const pollForPost = () => {
-      const fresh = loadPosts().find((p) => p.id === postId);
-      if (fresh) {
-        setPost(fresh);
-      } else {
-        // Keep polling every 500ms for up to 30 seconds
-        pollTimeout = setTimeout(pollForPost, 500);
-      }
-    };
-    pollTimeout = setTimeout(pollForPost, 500);
-
-    return () => clearTimeout(pollTimeout);
-  }, [open, postId]);
+  }, [open, postId, allPosts]);
 
   // Sync editable fields when post changes
   useEffect(() => {
@@ -223,16 +208,7 @@ export function PostViewModal({
     }
   }, [open]);
 
-  // Poll for updates during generation
-  useEffect(() => {
-    if (!post || post.status !== "generating") return;
-    const interval = setInterval(() => {
-      const fresh = loadPosts().find((p) => p.id === post.id);
-      if (fresh) setPost(fresh);
-      if (fresh?.status === "ready") clearInterval(interval);
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [post?.id, post?.status]);
+  // Convex reactivity handles generation updates — no polling needed
 
   // Load reference library
   useEffect(() => {
@@ -310,10 +286,8 @@ export function PostViewModal({
   // ─── Handlers ───────────────────────────────────────────────────────────────
 
   const refreshPost = useCallback(() => {
-    if (!postId) return;
-    const fresh = loadPosts().find((p) => p.id === postId);
-    if (fresh) setPost(fresh);
-  }, [postId]);
+    // No-op: Convex reactivity auto-refreshes
+  }, []);
 
   const handleToggleRef = (ref: ReferenceImage) => {
     if (!post) return;

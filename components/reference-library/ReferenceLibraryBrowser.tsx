@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { toast } from "sonner";
+import { useState, useMemo } from "react";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ReferenceImageCard } from "@/components/reference-library/ReferenceImageCard";
 import { ReferenceLibraryFilters } from "@/components/reference-library/ReferenceLibraryFilters";
@@ -26,11 +27,29 @@ export function ReferenceLibraryBrowser({
   showHeader = true,
   headerContent,
 }: ReferenceLibraryBrowserProps) {
-  const [images, setImages] = useState<ReferenceImage[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(defaultSelectionMode);
+
+  const convexRefs = useQuery(api.referenceImages.list);
+  const loading = convexRefs === undefined;
+  const error = null; // Convex handles errors via suspense/loading state
+
+  // Map Convex refs to ReferenceImage shape
+  const images: ReferenceImage[] = useMemo(() => {
+    if (!convexRefs) return [];
+    return convexRefs.map((ref: any) => ({
+      id: ref._id,
+      filename: ref.filename,
+      imagePath: ref.imageUrl || "",
+      thumbnailPath: ref.thumbnailUrl || ref.imageUrl || "",
+      imageUrl: ref.imageUrl,
+      thumbnailUrl: ref.thumbnailUrl,
+      summary: ref.summary,
+      tags: ref.tags,
+      metadata: ref.metadata,
+      createdAt: ref.createdAt,
+    }));
+  }, [convexRefs]);
 
   const [filters, setFilters] = useState<FiltersType>({
     search: "",
@@ -40,32 +59,6 @@ export function ReferenceLibraryBrowser({
     expression: "all",
     timeOfDay: "all"
   });
-
-  // Load images on mount
-  useEffect(() => {
-    loadImages();
-  }, []);
-
-  const loadImages = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch("/api/reference-images");
-      if (!response.ok) {
-        throw new Error("Failed to load reference images");
-      }
-
-      const data = await response.json();
-      setImages(data.images || data || []);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "An error occurred";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Filter images based on current filters
   const filteredImages = useMemo(() => {
@@ -152,20 +145,6 @@ export function ReferenceLibraryBrowser({
     );
   }
 
-  if (error) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="mx-auto h-8 w-8 text-red-500" />
-          <p className="mt-2 text-sm text-zinc-400">Failed to load images</p>
-          <p className="text-xs text-zinc-500">{error}</p>
-          <Button onClick={loadImages} variant="outline" className="mt-4">
-            Try Again
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">

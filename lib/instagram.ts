@@ -1,5 +1,5 @@
-import { readFile, writeFile, unlink, access } from "fs/promises";
-import { join } from "path";
+import type { ConvexHttpClient } from "convex/browser";
+import { api } from "@/convex/_generated/api";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -36,35 +36,41 @@ export interface PublishResult {
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const AUTH_FILE = join(process.cwd(), ".instagram-auth.json");
 const GRAPH_API_VERSION = "v21.0";
 const GRAPH_API_BASE = `https://graph.instagram.com/${GRAPH_API_VERSION}`;
 const CONTAINER_POLL_INTERVAL_MS = 2000;
 const CONTAINER_POLL_MAX_ATTEMPTS = 30;
 const MAX_IMAGE_SIZE_BYTES = 7.5 * 1024 * 1024; // 7.5MB (under IG's 8MB limit)
 
-// ─── Token Storage ──────────────────────────────────────────────────────────
+// ─── Token Storage (Convex-backed) ──────────────────────────────────────────
 
-export async function loadAuth(): Promise<InstagramAuth | null> {
-  try {
-    await access(AUTH_FILE);
-    const raw = await readFile(AUTH_FILE, "utf-8");
-    return JSON.parse(raw) as InstagramAuth;
-  } catch {
-    return null;
-  }
+export async function loadAuth(convex: ConvexHttpClient): Promise<InstagramAuth | null> {
+  const record = await convex.query(api.instagramAuth.get);
+  if (!record) return null;
+  return {
+    accessToken: record.accessToken,
+    tokenExpiresAt: record.tokenExpiresAt,
+    igUserId: record.igUserId,
+    username: record.username,
+    profilePictureUrl: record.profilePictureUrl,
+    connectedAt: record.connectedAt,
+  };
 }
 
-export async function saveAuth(auth: InstagramAuth): Promise<void> {
-  await writeFile(AUTH_FILE, JSON.stringify(auth, null, 2), { mode: 0o600 });
+export async function saveAuth(convex: ConvexHttpClient, auth: InstagramAuth): Promise<void> {
+  await convex.mutation(api.instagramAuth.save, auth);
 }
 
-export async function deleteAuth(): Promise<void> {
-  try {
-    await unlink(AUTH_FILE);
-  } catch {
-    // File doesn't exist, that's fine
-  }
+export async function deleteAuth(convex: ConvexHttpClient): Promise<void> {
+  await convex.mutation(api.instagramAuth.remove);
+}
+
+export async function updateAuthToken(
+  convex: ConvexHttpClient,
+  accessToken: string,
+  tokenExpiresAt: string
+): Promise<void> {
+  await convex.mutation(api.instagramAuth.updateToken, { accessToken, tokenExpiresAt });
 }
 
 export function isTokenExpired(auth: InstagramAuth): boolean {
@@ -87,14 +93,15 @@ export function getTokenDaysRemaining(auth: InstagramAuth): number {
 
 // ─── OAuth Helpers ──────────────────────────────────────────────────────────
 
-export function getOAuthUrl(appId: string, redirectUri: string): string {
-  const params = new URLSearchParams({
+export function getOAuthUrl(appId: string, redirectUri: string, state?: string): string {
+  const params: Record<string, string> = {
     client_id: appId,
     redirect_uri: redirectUri,
     scope: "instagram_basic,instagram_content_publish",
     response_type: "code",
-  });
-  return `https://api.instagram.com/oauth/authorize?${params.toString()}`;
+  };
+  if (state) params.state = state;
+  return `https://api.instagram.com/oauth/authorize?${new URLSearchParams(params).toString()}`;
 }
 
 export async function exchangeCodeForToken(
@@ -197,8 +204,8 @@ export async function fetchAccountInfo(
 /**
  * Get account status, auto-refreshing token if expiring soon.
  */
-export async function getAccountStatus(): Promise<InstagramAccount> {
-  const auth = await loadAuth();
+export async function getAccountStatus(convex: ConvexHttpClient): Promise<InstagramAccount> {
+  const auth = await loadAuth(convex);
   if (!auth) {
     return { connected: false };
   }
@@ -214,20 +221,15 @@ export async function getAccountStatus(): Promise<InstagramAccount> {
       const expiresAt = new Date();
       expiresAt.setSeconds(expiresAt.getSeconds() + refreshed.expiresIn);
 
-      const updatedAuth: InstagramAuth = {
-        ...auth,
-        accessToken: refreshed.accessToken,
-        tokenExpiresAt: expiresAt.toISOString(),
-      };
-      await saveAuth(updatedAuth);
+      await updateAuthToken(convex, refreshed.accessToken, expiresAt.toISOString());
 
       return {
         connected: true,
-        username: updatedAuth.username,
-        profilePictureUrl: updatedAuth.profilePictureUrl,
-        igUserId: updatedAuth.igUserId,
-        tokenExpiresAt: updatedAuth.tokenExpiresAt,
-        tokenDaysRemaining: getTokenDaysRemaining(updatedAuth),
+        username: auth.username,
+        profilePictureUrl: auth.profilePictureUrl,
+        igUserId: auth.igUserId,
+        tokenExpiresAt: expiresAt.toISOString(),
+        tokenDaysRemaining: getTokenDaysRemaining({ ...auth, tokenExpiresAt: expiresAt.toISOString() }),
       };
     } catch (error) {
       console.error("Auto-refresh failed:", error);
@@ -417,13 +419,13 @@ function buildFullCaption(caption: string, hashtags: string[]): string {
   return `${caption}\n\n${hashtagStr}`;
 }
 
-export async function publishSingleImage(params: {
+export async function publishSingleImage(convex: ConvexHttpClient, params: {
   imageUrl: string;
   caption: string;
   hashtags: string[];
   scheduledTime?: number;
 }): Promise<PublishResult> {
-  const auth = await loadAuth();
+  const auth = await loadAuth(convex);
   if (!auth || isTokenExpired(auth)) {
     return { success: false, error: "Not connected to Instagram", retryable: false };
   }
@@ -470,13 +472,13 @@ export async function publishSingleImage(params: {
   }
 }
 
-export async function publishCarousel(params: {
+export async function publishCarousel(convex: ConvexHttpClient, params: {
   imageUrls: string[];
   caption: string;
   hashtags: string[];
   scheduledTime?: number;
 }): Promise<PublishResult> {
-  const auth = await loadAuth();
+  const auth = await loadAuth(convex);
   if (!auth || isTokenExpired(auth)) {
     return { success: false, error: "Not connected to Instagram", retryable: false };
   }
@@ -557,10 +559,10 @@ export async function publishCarousel(params: {
   }
 }
 
-export async function publishStory(params: {
+export async function publishStory(convex: ConvexHttpClient, params: {
   imageUrl: string;
 }): Promise<PublishResult> {
-  const auth = await loadAuth();
+  const auth = await loadAuth(convex);
   if (!auth || isTokenExpired(auth)) {
     return { success: false, error: "Not connected to Instagram", retryable: false };
   }

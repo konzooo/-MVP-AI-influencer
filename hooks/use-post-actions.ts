@@ -3,16 +3,21 @@
 import { useState, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { PostPlan, GeneratedImage } from "@/lib/types";
-import { savePost, loadPosts } from "@/lib/store";
+import { savePostToConvex as savePost } from "@/lib/convex";
 import { generatePostImages } from "@/lib/task-runner";
 import { checkDailyLimit, recordGeneration } from "@/lib/cost-tracker";
 import { canPublish, recordPublish } from "@/lib/instagram-rate-limit";
 import { Task } from "@/lib/task-types";
+import { useAction } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { useAuthToken } from "@convex-dev/auth/react";
 
 export function usePostActions() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const persistImage = useAction(api.imageStorage.persistImage);
+  const token = useAuthToken();
 
   /**
    * Approve a draft and start image generation via the server-side pipeline.
@@ -57,6 +62,10 @@ export function usePostActions() {
         imageSize: options?.imageSize || "portrait_4_3",
         styleModeHint,
         signal: abortController.signal,
+        persistImageUrl: async (url: string) => {
+          const stored = await persistImage({ url, mimeType: "image/jpeg" });
+          return stored.permanentUrl;
+        },
       });
 
       abortRef.current = null;
@@ -190,9 +199,19 @@ export function usePostActions() {
               const actualSeed =
                 img.seed ||
                 (settings?.seed ? parseInt(settings.seed) + v : undefined);
+
+              // Persist to Convex storage (FAL URLs expire in 7 days)
+              let permanentUrl = img.url;
+              try {
+                const stored = await persistImage({ url: img.url, mimeType: "image/jpeg" });
+                permanentUrl = stored.permanentUrl;
+              } catch {
+                // Fall back to FAL URL if persistence fails
+              }
+
               allNewImages.push({
                 id: crypto.randomUUID(),
-                url: img.url,
+                url: permanentUrl,
                 prompt: promptData.prompt,
                 seed: actualSeed,
                 settings: {
@@ -279,9 +298,12 @@ export function usePostActions() {
       savePost(publishing);
 
       try {
+        const publishHeaders: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) publishHeaders["x-convex-auth"] = token;
+
         const res = await fetch("/api/instagram/publish", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: publishHeaders,
           body: JSON.stringify({
             imageUrls: selectedImages.map((img) => img.url),
             caption: post.caption,

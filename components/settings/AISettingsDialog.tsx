@@ -9,12 +9,11 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
-  loadAISettings,
-  saveAISettings,
   type AISettings,
   type AIProvider,
   type CarouselStyle,
 } from "@/lib/ai-settings";
+import { useSettings } from "@/hooks/use-settings";
 import { Brain, Check, Camera, Layers } from "lucide-react";
 
 interface AISettingsDialogProps {
@@ -58,15 +57,16 @@ const CAROUSEL_STYLE_INFO: Record<CarouselStyle, { label: string; description: s
 };
 
 export function AISettingsDialog({ open, onOpenChange }: AISettingsDialogProps) {
+  const { aiSettings: convexAISettings, saveAISettings } = useSettings();
   const [settings, setSettings] = useState<AISettings | null>(null);
   const [isDirty, setIsDirty] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setSettings(loadAISettings());
+      setSettings(convexAISettings);
       setIsDirty(false);
     }
-  }, [open]);
+  }, [open, convexAISettings]);
 
   const handleProviderChange = (task: AIProviderKey, provider: AIProvider) => {
     if (!settings) return;
@@ -81,9 +81,9 @@ export function AISettingsDialog({ open, onOpenChange }: AISettingsDialogProps) 
     setIsDirty(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (settings) {
-      saveAISettings(settings);
+      await saveAISettings(settings);
       onOpenChange(false);
     }
   };

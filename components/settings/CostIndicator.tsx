@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getDailySpend, getCostSettings } from "@/lib/cost-tracker";
+import { getDailySpend } from "@/lib/cost-tracker";
+import { useSettings } from "@/hooks/use-settings";
 
 interface CostIndicatorProps {
   onClick?: () => void;
@@ -9,14 +10,10 @@ interface CostIndicatorProps {
 
 export function CostIndicator({ onClick }: CostIndicatorProps) {
   const [dailySpend, setDailySpend] = useState(0);
-  const [settings, setSettings] = useState(getCostSettings());
+  const { costSettings: settings } = useSettings();
 
   useEffect(() => {
-    const update = () => {
-      setDailySpend(getDailySpend());
-      setSettings(getCostSettings());
-    };
-
+    const update = () => setDailySpend(getDailySpend());
     update();
     const interval = setInterval(update, 5000);
     return () => clearInterval(interval);

@@ -15,13 +15,12 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Coins, TrendingUp } from "lucide-react";
 import {
-  getCostSettings,
-  saveCostSettings,
   getDailySpend,
   getWeeklySpend,
   getDailyGenerationCount,
   type CostSettings,
 } from "@/lib/cost-tracker";
+import { useSettings } from "@/hooks/use-settings";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -29,22 +28,23 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const [settings, setSettings] = useState<CostSettings>(getCostSettings());
+  const { costSettings, saveCostSettings } = useSettings();
+  const [settings, setSettings] = useState<CostSettings>(costSettings);
   const [dailySpend, setDailySpend] = useState(0);
   const [weeklySpend, setWeeklySpend] = useState(0);
   const [dailyCount, setDailyCount] = useState(0);
 
   useEffect(() => {
     if (open) {
-      setSettings(getCostSettings());
+      setSettings(costSettings);
       setDailySpend(getDailySpend());
       setWeeklySpend(getWeeklySpend());
       setDailyCount(getDailyGenerationCount());
     }
-  }, [open]);
+  }, [open, costSettings]);
 
-  const handleSave = () => {
-    saveCostSettings(settings);
+  const handleSave = async () => {
+    await saveCostSettings(settings);
     onOpenChange(false);
   };
 

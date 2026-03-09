@@ -1,7 +1,7 @@
 "use client";
 
 import { PostPlan, CreationMode, PostType, createEmptyPost } from "./types";
-import { savePost } from "./store";
+import { savePostToConvex as savePost } from "./convex";
 import { loadIdentity, buildPersonaContext } from "./identity";
 import { loadAISettings } from "./ai-settings";
 

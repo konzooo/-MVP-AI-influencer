@@ -5,8 +5,13 @@ import {
   publishCarousel,
   publishStory,
 } from "@/lib/instagram";
+import { convexClientFromRequest } from "@/lib/convex-server";
 
 export async function POST(request: NextRequest) {
+  const convexOrError = convexClientFromRequest(request);
+  if (convexOrError instanceof NextResponse) return convexOrError;
+  const convex = convexOrError;
+
   try {
     const body = await request.json();
     const { imageUrls, caption, hashtags, postType, scheduledTime } = body;
@@ -52,9 +57,9 @@ export async function POST(request: NextRequest) {
     let result;
 
     if (postType === "story") {
-      result = await publishStory({ imageUrl: imageUrls[0] });
+      result = await publishStory(convex, { imageUrl: imageUrls[0] });
     } else if (postType === "carousel" && imageUrls.length >= 2) {
-      result = await publishCarousel({
+      result = await publishCarousel(convex, {
         imageUrls,
         caption: caption || "",
         hashtags: hashtags || [],
@@ -62,7 +67,7 @@ export async function POST(request: NextRequest) {
       });
     } else {
       // Single image (or carousel with only 1 image)
-      result = await publishSingleImage({
+      result = await publishSingleImage(convex, {
         imageUrl: imageUrls[0],
         caption: caption || "",
         hashtags: hashtags || [],

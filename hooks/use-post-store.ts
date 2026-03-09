@@ -1,35 +1,25 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { PostPlan } from "@/lib/types";
-import { loadPosts, savePost, deletePost as deletePostFromStore, loadPostsRemote, savePosts } from "@/lib/store";
-import { POSTS_UPDATED_EVENT, dispatchPostsUpdated } from "@/lib/post-events";
+import { Id } from "@/convex/_generated/dataModel";
+
+/** Convert a Convex post document back to the PostPlan shape used throughout the app. */
+function toPostPlan(doc: any): PostPlan & { _id: Id<"posts"> } {
+  return {
+    ...doc,
+    id: doc.externalId,
+  };
+}
 
 export function usePostStore() {
-  const [posts, setPosts] = useState<PostPlan[]>([]);
+  const rawPosts = useQuery(api.posts.list) ?? [];
+  const saveMutation = useMutation(api.posts.save);
+  const removeByExternalIdMutation = useMutation(api.posts.removeByExternalId);
 
-  const refresh = useCallback(() => {
-    setPosts(loadPosts());
-  }, []);
-
-  // Load on mount: show local immediately, then sync from Supabase
-  useEffect(() => {
-    refresh();
-
-    // Fetch from Supabase and sync local cache
-    loadPostsRemote().then((remote) => {
-      if (remote.length > 0) {
-        savePosts(remote);
-        setPosts(remote);
-      }
-    }).catch(() => {
-      // Supabase unavailable, local data is fine
-    });
-
-    const handler = () => refresh();
-    window.addEventListener(POSTS_UPDATED_EVENT, handler);
-    return () => window.removeEventListener(POSTS_UPDATED_EVENT, handler);
-  }, [refresh]);
+  const posts: (PostPlan & { _id: Id<"posts"> })[] = rawPosts.map(toPostPlan);
 
   const getPost = useCallback(
     (id: string): PostPlan | undefined => {
@@ -38,13 +28,29 @@ export function usePostStore() {
     [posts]
   );
 
-  const updatePost = useCallback((post: PostPlan) => {
-    savePost(post); // dispatches POSTS_UPDATED_EVENT internally
-  }, []);
+  const updatePost = useCallback(
+    async (post: PostPlan) => {
+      const { id, ...rest } = post as any;
+      const _id = (post as any)._id as Id<"posts"> | undefined;
+      await saveMutation({
+        ...rest,
+        id: _id,
+        externalId: id,
+        updatedAt: new Date().toISOString(),
+      });
+    },
+    [saveMutation]
+  );
 
-  const deletePost = useCallback((id: string) => {
-    deletePostFromStore(id); // dispatches POSTS_UPDATED_EVENT internally
-  }, []);
+  const deletePost = useCallback(
+    async (id: string) => {
+      await removeByExternalIdMutation({ externalId: id });
+    },
+    [removeByExternalIdMutation]
+  );
+
+  // No-op refresh — Convex queries are reactive
+  const refresh = useCallback(() => {}, []);
 
   return {
     posts,

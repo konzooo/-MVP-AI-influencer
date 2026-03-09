@@ -1,9 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAccountStatus } from "@/lib/instagram";
+import { convexClientFromRequest } from "@/lib/convex-server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const convexOrError = convexClientFromRequest(request);
+  if (convexOrError instanceof NextResponse) return convexOrError;
+
   try {
-    const account = await getAccountStatus();
+    const account = await getAccountStatus(convexOrError);
     return NextResponse.json(account);
   } catch (error) {
     console.error("Instagram account status error:", error);

@@ -11,9 +11,10 @@ import {
   PostPlan,
   PostType,
 } from "./types";
-import { savePost as savePostState } from "./store";
+import { savePostToConvex as savePostState } from "./convex";
 import { loadIdentity } from "./identity";
-import { saveTask, computeNextRunAt } from "./task-store";
+import { saveTaskToConvex as saveTask } from "./convex";
+import { computeNextRunAt } from "./task-utils";
 import {
   selectCharacterReference,
   buildContextFromStyleMode,
@@ -55,6 +56,8 @@ export async function generatePostImages(
     imageSize: string;
     styleModeHint?: string;
     signal?: AbortSignal;
+    /** Optional callback to persist a FAL URL to permanent storage. Returns the permanent URL. */
+    persistImageUrl?: (url: string) => Promise<string>;
   }
 ): Promise<GeneratePostResult> {
   const log = createLog();
@@ -236,9 +239,21 @@ export async function generatePostImages(
         }
 
         const img = genResult.images[0];
+
+        // Persist to Convex storage (FAL URLs expire in 7 days)
+        let permanentUrl = img.url;
+        if (options.persistImageUrl) {
+          try {
+            permanentUrl = await options.persistImageUrl(img.url);
+            log.add(`Stored slide ${promptIdx + 1} permanently`);
+          } catch {
+            log.add(`WARNING: Could not persist slide ${promptIdx + 1} — using temporary FAL URL`);
+          }
+        }
+
         post.generatedImages.unshift({
           id: `gen-${Date.now()}-${promptIdx}`,
-          url: img.url,
+          url: permanentUrl,
           prompt: prompt.prompt,
           seed: img.seed,
           selected: true,
@@ -253,7 +268,7 @@ export async function generatePostImages(
         });
 
         if (post.postType === "carousel" && promptIdx === 0) {
-          slide0GeneratedUrl = img.url;
+          slide0GeneratedUrl = permanentUrl;
           log.add(`Slide 1 generated — will cascade as reference for remaining slides`);
         }
 
