@@ -120,20 +120,23 @@ export async function generatePostImages(
     for (const ref of charRefPaths) {
       log.add(`Uploading character reference ${ref.id} to fal storage...`);
       try {
-        let refBase64: string;
-        if (ref.path.startsWith("data:")) {
-          // Already a base64 data URI (user-uploaded image)
-          refBase64 = ref.path;
+        let uploadedUrl: string;
+        if (ref.path.startsWith("http")) {
+          // Already a public URL (Convex storage) — pass directly to FAL
+          uploadedUrl = await uploadToFalStorage(ref.path, process.env.FAL_KEY!);
+        } else if (ref.path.startsWith("data:")) {
+          // Base64 data URI
+          uploadedUrl = await uploadToFalStorage(ref.path, process.env.FAL_KEY!);
         } else {
-          // Server path — fetch and convert to base64
+          // Relative server path — fetch and convert to base64
           const localRefUrl = `${baseUrl}${ref.path}`;
           const refRes = await fetch(localRefUrl);
           if (!refRes.ok) throw new Error(`Failed to fetch reference image: ${refRes.status}`);
           const refBlob = await refRes.blob();
           const refBuffer = Buffer.from(await refBlob.arrayBuffer());
           refBase64 = `data:${refBlob.type || "image/jpeg"};base64,${refBuffer.toString("base64")}`;
+          uploadedUrl = await uploadToFalStorage(refBase64, process.env.FAL_KEY!);
         }
-        const uploadedUrl = await uploadToFalStorage(refBase64, process.env.FAL_KEY!);
         charRefUrls.push(uploadedUrl);
         log.add(`Character reference uploaded: ${uploadedUrl.slice(0, 60)}...`);
       } catch (err) {

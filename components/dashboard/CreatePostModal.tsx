@@ -4,6 +4,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { CreationMode, PostType } from "@/lib/types";
 import { brainstormPost } from "@/lib/brainstorm";
+import { createEmptyPost } from "@/lib/types";
+import { savePostToConvex } from "@/lib/convex";
 import { ImageDropZone } from "@/components/ui/ImageDropZone";
 import { ReferenceLibraryDialog } from "@/components/reference-library/ReferenceLibraryDialog";
 import type { ReferenceImage } from "@/lib/types";
@@ -22,6 +24,7 @@ import {
   Copy,
   ImageIcon,
   Library,
+  Pencil,
 } from "lucide-react";
 
 const POST_TYPE_OPTIONS: { value: PostType; label: string; desc: string }[] = [
@@ -51,8 +54,9 @@ export function CreatePostModal({
   const [isLoading, setIsLoading] = useState(false);
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
 
+  const isManual = creationMode === "manual";
   const canSubmit =
-    creationMode && postType && (idea.trim() || images.length > 0) && !isLoading;
+    creationMode && postType && (isManual || idea.trim() || images.length > 0) && !isLoading;
 
   const reset = () => {
     setCreationMode(null);
@@ -64,6 +68,16 @@ export function CreatePostModal({
 
   const handleCreate = async () => {
     if (!creationMode || !postType) return;
+
+    // Manual mode: skip brainstorm, open empty post immediately
+    if (creationMode === "manual") {
+      const newPost = createEmptyPost("manual", postType);
+      await savePostToConvex(newPost);
+      reset();
+      onOpenChange(false);
+      onPostCreated(newPost.id);
+      return;
+    }
 
     // Generate a temporary ID to show loading state
     const tempId = `temp-${Date.now()}`;
@@ -145,7 +159,7 @@ export function CreatePostModal({
               <label className="text-xs font-medium text-zinc-400">
                 Start with
               </label>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 {[
                   {
                     value: "from_scratch" as CreationMode,
@@ -164,6 +178,12 @@ export function CreatePostModal({
                     icon: ImageIcon,
                     label: "Start with own image",
                     desc: "Upload your photos, AI adds caption & details",
+                  },
+                  {
+                    value: "manual" as CreationMode,
+                    icon: Pencil,
+                    label: "Manual",
+                    desc: "Empty post — fill everything yourself, generate what you need",
                   },
                 ].map((opt) => (
                   <button
@@ -232,8 +252,8 @@ export function CreatePostModal({
               </div>
             </div>
 
-            {/* Step 3: Content */}
-            {creationMode && postType && (
+            {/* Step 3: Content (hidden for manual mode) */}
+            {creationMode && postType && !isManual && (
               <div className="animate-in fade-in slide-in-from-top-2 space-y-4 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4 duration-300">
                 {/* Image upload (for copy_post and from_own_images) */}
                 {(creationMode === "copy_post" ||
@@ -315,13 +335,15 @@ export function CreatePostModal({
             {/* Footer */}
             <div className="flex items-center justify-between">
               <p className="text-xs text-zinc-600">
-                {creationMode === "copy_post"
-                  ? "The AI will analyze the images and create a recreation plan"
-                  : creationMode === "from_own_images"
-                    ? "The AI will analyze your photos and generate caption & details"
-                    : creationMode === "from_scratch"
-                      ? "The AI will flesh out your idea into a complete post plan"
-                      : "Select creation mode and post type to begin"}
+                {creationMode === "manual"
+                  ? "Opens an empty post — no AI brainstorm, you fill everything in"
+                  : creationMode === "copy_post"
+                    ? "The AI will analyze the images and create a recreation plan"
+                    : creationMode === "from_own_images"
+                      ? "The AI will analyze your photos and generate caption & details"
+                      : creationMode === "from_scratch"
+                        ? "The AI will flesh out your idea into a complete post plan"
+                        : "Select creation mode and post type to begin"}
               </p>
               <Button
                 onClick={handleCreate}
@@ -332,6 +354,11 @@ export function CreatePostModal({
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Creating...
+                  </>
+                ) : isManual ? (
+                  <>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Open Empty Post
                   </>
                 ) : (
                   <>

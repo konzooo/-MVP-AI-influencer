@@ -106,6 +106,11 @@ const CREATION_MODE_CONFIG: Record<
     icon: <Sparkles className="mr-0.5 h-2.5 w-2.5" />,
     className: "border-zinc-700 bg-zinc-900/50 text-zinc-400",
   },
+  manual: {
+    label: "Manual",
+    icon: <Pencil className="mr-0.5 h-2.5 w-2.5" />,
+    className: "border-amber-800 bg-amber-950/40 text-amber-400",
+  },
 };
 
 const POST_TYPE_LABELS: Record<string, string> = {
@@ -612,7 +617,7 @@ export function PostViewModal({
   }
 
   const needsLibraryRef =
-    post.creationMode === "copy_post" || post.creationMode === "from_scratch";
+    post.creationMode === "copy_post" || post.creationMode === "from_scratch" || post.creationMode === "manual";
 
   return (
     <>
