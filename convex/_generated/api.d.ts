@@ -13,6 +13,7 @@ import type * as ai_brainstorm from "../ai/brainstorm.js";
 import type * as ai_generate from "../ai/generate.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
+import type * as generatedImages from "../generatedImages.js";
 import type * as http from "../http.js";
 import type * as imageStorage from "../imageStorage.js";
 import type * as instagramAuth from "../instagramAuth.js";
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   "ai/generate": typeof ai_generate;
   auth: typeof auth;
   crons: typeof crons;
+  generatedImages: typeof generatedImages;
   http: typeof http;
   imageStorage: typeof imageStorage;
   instagramAuth: typeof instagramAuth;

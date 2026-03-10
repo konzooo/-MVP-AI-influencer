@@ -169,6 +169,20 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"]),
 
+  generatedImages: defineTable({
+    userId: v.id("users"),
+    storageId: v.id("_storage"),
+    filename: v.string(),
+    prompt: v.string(),
+    seed: v.optional(v.number()),
+    model: v.string(), // "fal" or other source
+    postId: v.optional(v.string()), // Link to post it was generated for
+    tags: v.array(v.string()),
+    createdAt: v.string(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_postId", ["postId"]),
+
   instagramAuth: defineTable({
     userId: v.id("users"),
     accessToken: v.string(),

@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Images, Loader2, AlertCircle } from "lucide-react";
 import type { ReferenceImage, ReferenceLibraryFilters as FiltersType } from "@/lib/types";
 
+type TabType = "reference" | "generated";
+
 interface ReferenceLibraryBrowserProps {
   /** If true, enables selection mode by default */
   selectionMode?: boolean;
@@ -29,9 +31,11 @@ export function ReferenceLibraryBrowser({
 }: ReferenceLibraryBrowserProps) {
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(defaultSelectionMode);
+  const [activeTab, setActiveTab] = useState<TabType>("reference");
 
   const convexRefs = useQuery(api.referenceImages.list);
-  const loading = convexRefs === undefined;
+  const generatedImgs = useQuery(api.generatedImages.list);
+  const loading = convexRefs === undefined || generatedImgs === undefined;
   const error = null; // Convex handles errors via suspense/loading state
 
   // Map Convex refs to ReferenceImage shape
@@ -188,10 +192,37 @@ export function ReferenceLibraryBrowser({
         </div>
       )}
 
+      {/* Tabs */}
+      <div className="border-b border-zinc-800 px-6">
+        <div className="flex gap-6">
+          <button
+            onClick={() => setActiveTab("reference")}
+            className={`px-2 py-3 text-sm font-medium transition-colors ${ activeTab === "reference"
+              ? "border-b-2 border-violet-600 text-violet-400"
+              : "text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            Reference Images ({convexRefs?.length ?? 0})
+          </button>
+          <button
+            onClick={() => setActiveTab("generated")}
+            className={`px-2 py-3 text-sm font-medium transition-colors ${
+              activeTab === "generated"
+                ? "border-b-2 border-violet-600 text-violet-400"
+                : "text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            Generated ({generatedImgs?.length ?? 0})
+          </button>
+        </div>
+      </div>
+
       {/* Scrollable content - filters, button, and grid */}
       <ScrollArea className="flex-1 min-h-0">
         <div className="p-6">
-          {/* Filters */}
+          {/* Reference Tab */}
+          {activeTab === "reference" && (
+            <>
           <div className="mb-6">
             <ReferenceLibraryFilters
               filters={filters}
@@ -200,8 +231,6 @@ export function ReferenceLibraryBrowser({
               filteredCount={filteredImages.length}
             />
           </div>
-
-          {/* Legacy confirmation button removed — now in header */}
 
           {filteredImages.length === 0 ? (
             <div className="flex h-64 items-center justify-center">
@@ -241,6 +270,44 @@ export function ReferenceLibraryBrowser({
                 />
               ))}
             </div>
+          )}
+            </>
+          )}
+
+          {/* Generated Tab */}
+          {activeTab === "generated" && (
+            <>
+          {generatedImgs && generatedImgs.length === 0 ? (
+            <div className="flex h-64 items-center justify-center">
+              <div className="text-center">
+                <Images className="mx-auto h-12 w-12 text-zinc-600" />
+                <p className="mt-2 text-sm text-zinc-400">No generated images yet</p>
+                <p className="mt-1 text-xs text-zinc-600">Images you generate will appear here</p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7">
+              {generatedImgs?.map((image: any) => (
+                <div
+                  key={image._id}
+                  className="group relative aspect-square overflow-hidden rounded-lg bg-zinc-900 cursor-pointer hover:ring-2 hover:ring-violet-500/50 transition-all"
+                >
+                  <img
+                    src={image.imageUrl}
+                    alt={image.prompt}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-end p-2">
+                    <p className="text-xs text-white/0 group-hover:text-white/70 line-clamp-2 transition-colors">
+                      {image.prompt}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+            </>
           )}
         </div>
       </ScrollArea>
