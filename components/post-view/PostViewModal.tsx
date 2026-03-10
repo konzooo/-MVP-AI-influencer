@@ -184,7 +184,14 @@ export function PostViewModal({
     }
     const found = allPosts.find((p) => p.id === postId);
     if (found) {
-      setPost(found);
+      setPost((prev) => {
+        // Only update if something meaningful changed to avoid infinite loops
+        if (!prev) return found;
+        if (prev.id !== found.id) return found;
+        if (prev.status !== found.status) return found;
+        if (prev.updatedAt !== found.updatedAt) return found;
+        return prev;
+      });
     }
   }, [open, postId, allPosts]);
 
