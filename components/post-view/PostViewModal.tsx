@@ -185,6 +185,7 @@ export function PostViewModal({
   const { posts: allPosts, deletePost } = usePostStore();
   const convexRefs = useQuery(api.referenceImages.list) ?? [];
   const guides = useQuery(api.aiGuides.get);
+  const settings = useQuery(api.settings.get);
 
   // ─── Load post (reactive via Convex) ──────────────────────────────────────
 
@@ -739,25 +740,30 @@ export function PostViewModal({
                   </div>
                   {canEdit && editingCaption ? (
                     <div className="space-y-2">
-                      <Textarea
-                        value={post.caption}
-                        onChange={(e) => {
-                          const updated = { ...post, caption: e.target.value };
-                          setPost(updated);
-                          savePost(updated);
-                        }}
-                        onBlur={() => setEditingCaption(false)}
-                        autoFocus
-                        className="min-h-[80px] resize-y border-zinc-800 bg-zinc-900 text-sm text-zinc-200"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setCaptionHelperOpen(true)}
-                        className="flex items-center gap-1 rounded px-2 py-1 text-[10px] text-violet-400 transition-colors hover:bg-violet-950/30 hover:text-violet-300"
-                      >
-                        <Sparkles className="h-3 w-3" />
-                        AI Helper
-                      </button>
+                      <div className="relative">
+                        <Textarea
+                          value={post.caption}
+                          onChange={(e) => {
+                            const updated = { ...post, caption: e.target.value };
+                            setPost(updated);
+                            savePost(updated);
+                          }}
+                          onBlur={() => setEditingCaption(false)}
+                          autoFocus
+                          className="min-h-[80px] resize-y border-zinc-800 bg-zinc-900 text-sm text-zinc-200"
+                        />
+                        <button
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault(); // prevent textarea blur
+                            setCaptionHelperOpen(true);
+                          }}
+                          className="absolute right-2 top-2 flex items-center gap-1 rounded px-2 py-1 text-[10px] text-violet-400 transition-colors hover:bg-violet-950/50 hover:text-violet-300 bg-zinc-900/70 backdrop-blur-sm"
+                        >
+                          <Sparkles className="h-3 w-3" />
+                          AI Helper
+                        </button>
+                      </div>
                     </div>
                   ) : post.caption ? (
                     <p
@@ -1368,28 +1374,31 @@ export function PostViewModal({
 
                       {/* Caption */}
                       <div>
-                        <div className="mb-1 flex items-center justify-between">
-                          <label className="text-[10px] font-medium text-zinc-500">
-                            Caption
-                          </label>
+                        <label className="text-[10px] font-medium text-zinc-500">
+                          Caption
+                        </label>
+                        <div className="relative mt-1">
+                          <Textarea
+                            value={caption}
+                            onChange={(e) => {
+                              setCaption(e.target.value);
+                              setCaptionDirty(true);
+                            }}
+                            className="min-h-[100px] resize-none border-zinc-800 bg-zinc-900 text-xs text-zinc-100"
+                            placeholder="Instagram caption"
+                          />
                           <button
                             type="button"
-                            onClick={() => setCaptionHelperOpen(true)}
-                            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-violet-400 transition-colors hover:bg-violet-950/30 hover:text-violet-300"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setCaptionHelperOpen(true);
+                            }}
+                            className="absolute right-2 top-2 flex items-center gap-1 rounded px-2 py-1 text-[10px] text-violet-400 transition-colors hover:bg-violet-950/50 hover:text-violet-300 bg-zinc-900/70 backdrop-blur-sm"
                           >
-                            <Sparkles className="h-2.5 w-2.5" />
+                            <Sparkles className="h-3 w-3" />
                             AI Helper
                           </button>
                         </div>
-                        <Textarea
-                          value={caption}
-                          onChange={(e) => {
-                            setCaption(e.target.value);
-                            setCaptionDirty(true);
-                          }}
-                          className="min-h-[100px] resize-none border-zinc-800 bg-zinc-900 text-xs text-zinc-100"
-                          placeholder="Instagram caption"
-                        />
                       </div>
 
                       {/* Hashtags */}
@@ -1781,19 +1790,32 @@ export function PostViewModal({
       )}
 
       {/* Caption Helper Dialog */}
-      {guides && (
-        <CaptionHelperDialog
-          open={captionHelperOpen}
-          onOpenChange={setCaptionHelperOpen}
-          currentCaption={caption}
-          imageUrls={selectedImages.map((i) => i.url)}
-          onApplyCaption={(newCaption) => {
-            setCaption(newCaption);
-            setCaptionDirty(true);
-          }}
-          captionStyle={guides.captionStyle}
-        />
-      )}
+      <CaptionHelperDialog
+        open={captionHelperOpen}
+        onOpenChange={setCaptionHelperOpen}
+        currentCaption={isReady ? caption : (post?.caption ?? caption)}
+        imageUrls={selectedImages.map((i) => i.url)}
+        onApplyCaption={(newCaption) => {
+          setCaption(newCaption);
+          setCaptionDirty(true);
+          if (post && !isReady) {
+            const updated = { ...post, caption: newCaption };
+            setPost(updated);
+            savePost(updated);
+            setEditingCaption(true); // re-open edit mode so user sees the updated caption
+          }
+        }}
+        captionStyle={guides?.captionStyle}
+        identityContext={(() => {
+          const id = settings?.identity;
+          if (!id) return undefined;
+          const parts: string[] = [];
+          if (id.name) parts.push(`You are creating content for an AI influencer named ${id.name}.`);
+          if (id.captionTone) parts.push(`Caption tone: ${id.captionTone}`);
+          if (id.captionLanguage) parts.push(`Caption language: ${id.captionLanguage}`);
+          return parts.length ? parts.join("\n") : undefined;
+        })()}
+      />
 
       {/* Image lightbox — rendered via portal outside Dialog */}
       {lightboxUrl &&

@@ -21,6 +21,7 @@ interface CaptionHelperDialogProps {
   imageUrls: string[];
   onApplyCaption: (caption: string) => void;
   captionStyle?: string;
+  identityContext?: string;
 }
 
 export function CaptionHelperDialog({
@@ -30,6 +31,7 @@ export function CaptionHelperDialog({
   imageUrls,
   onApplyCaption,
   captionStyle,
+  identityContext,
 }: CaptionHelperDialogProps) {
   const [userRequest, setUserRequest] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -51,6 +53,7 @@ export function CaptionHelperDialog({
           currentCaption,
           imageUrls,
           captionStyle,
+          identityContext,
         }),
       });
 

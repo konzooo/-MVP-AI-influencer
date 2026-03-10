@@ -3,13 +3,13 @@ import { query, mutation } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 const DEFAULT_GUIDES = {
-  captionStyle: `You write Instagram captions in a personal, authentic voice that feels like a friend sharing a moment. Key principles:
-- Start with a hook or genuine observation
-- Keep it conversational, not corporate
-- Show personality and vulnerability
-- End with a question or call-to-action
-- Use line breaks for readability
-- Emojis are optional but can enhance mood`,
+  captionStyle: `You write short, punchy Instagram captions that feel effortless and real. Key principles:
+- MAX 2 lines — short is the style, not a limitation
+- Witty, a little poetic, never over-explained
+- Let the image carry the story; the caption adds a spark
+- No filler: avoid "Embracing the moment", "Living my best life", "Grateful for..."
+- Emojis optional, max 1, only if it genuinely fits
+- No questions or calls-to-action unless the user specifically asks`,
 
   promptStyle: `You refine image generation prompts to be specific and atmospheric. Key principles:
 - Include specific pose, expression, and body language

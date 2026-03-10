@@ -32,8 +32,7 @@ export function setConvexClient(client: ConvexReactClient) {
  */
 export async function savePostToConvex(post: PostPlan): Promise<void> {
   const client = getConvexClient();
-  const { id, ...rest } = post as any;
-  const _id = (post as any)._id;
+  const { id, _id, _creationTime, userId, ...rest } = post as any;
   await client.mutation(api.posts.save, {
     ...rest,
     id: _id,
@@ -64,8 +63,7 @@ export async function loadPostsFromConvex(): Promise<PostPlan[]> {
  */
 export async function saveTaskToConvex(task: Task): Promise<void> {
   const client = getConvexClient();
-  const { id, ...rest } = task as any;
-  const _id = (task as any)._id;
+  const { id, _id, _creationTime, userId, ...rest } = task as any;
   await client.mutation(api.tasks.save, {
     ...rest,
     id: _id,

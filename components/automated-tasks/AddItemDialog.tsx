@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -16,7 +18,7 @@ import {
   CopyPostInspirationItem,
   InspirationItem,
 } from "@/lib/task-types";
-import { PostType, ReferenceImage } from "@/lib/types";
+import { PostType } from "@/lib/types";
 
 type ItemType = "own_image" | "copy_post";
 
@@ -36,24 +38,13 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
   const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
   const [uploadedPreviews, setUploadedPreviews] = useState<string[]>([]);
   const [imageSource, setImageSource] = useState<ImageSource>("upload");
-  const [libraryImages, setLibraryImages] = useState<ReferenceImage[]>([]);
-  const [libraryLoading, setLibraryLoading] = useState(false);
+  const convexLibraryImages = useQuery(api.referenceImages.list);
   const [selectedLibraryIds, setSelectedLibraryIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isCarousel = defaultPostType === "carousel";
-
-  // Load library images when switching to library source
-  useEffect(() => {
-    if (imageSource === "library" && libraryImages.length === 0 && !libraryLoading) {
-      setLibraryLoading(true);
-      fetch("/api/reference-images")
-        .then((res) => res.json())
-        .then((data) => setLibraryImages(data.images || []))
-        .catch((err) => console.error("Failed to load library:", err))
-        .finally(() => setLibraryLoading(false));
-    }
-  }, [imageSource, libraryImages.length, libraryLoading]);
+  const libraryImages = convexLibraryImages ?? [];
+  const libraryLoading = convexLibraryImages === undefined;
 
   const resetState = () => {
     setNotes("");
@@ -120,7 +111,7 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
     });
   };
 
-  const toggleLibraryImage = (img: ReferenceImage) => {
+  const toggleLibraryImage = (img: { id: string }) => {
     setSelectedLibraryIds((prev) => {
       const next = new Set(prev);
       if (next.has(img.id)) {
@@ -136,13 +127,13 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
     if (selectedLibraryIds.size === 0) return;
 
     setUploading(true);
-    const selected = libraryImages.filter((img) => selectedLibraryIds.has(img.id));
+    const selected = libraryImages.filter((img) => selectedLibraryIds.has((img as any)._id ?? img.id));
     const urls: string[] = [];
     const previews: string[] = [];
 
     for (const img of selected) {
       try {
-        const imgRes = await fetch(img.imagePath);
+        const imgRes = await fetch((img as any).imageUrl);
         const blob = await imgRes.blob();
         const reader = new FileReader();
         const dataUri = await new Promise<string>((resolve) => {
@@ -150,7 +141,7 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
           reader.readAsDataURL(blob);
         });
 
-        previews.push(img.thumbnailPath);
+        previews.push((img as any).thumbnailUrl || (img as any).imageUrl);
 
         // Upload directly to FAL storage client-side
         const { uploadToFalStorageClient } = await import("@/lib/fal-client");
@@ -363,11 +354,12 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
                   <>
                     <div className="grid grid-cols-5 gap-1.5 max-h-48 overflow-y-auto rounded border border-zinc-700 p-2">
                       {libraryImages.map((img) => {
-                        const isSelected = selectedLibraryIds.has(img.id);
+                        const convexImg = img as any;
+                        const isSelected = selectedLibraryIds.has(convexImg._id ?? img.id);
                         return (
                           <button
-                            key={img.id}
-                            onClick={() => toggleLibraryImage(img)}
+                            key={convexImg._id ?? img.id}
+                            onClick={() => toggleLibraryImage({ ...img, id: convexImg._id ?? img.id } as any)}
                             className={`relative aspect-square overflow-hidden rounded transition-all ${
                               isSelected
                                 ? "ring-2 ring-violet-500"
@@ -375,7 +367,7 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
                             }`}
                           >
                             <img
-                              src={img.thumbnailPath}
+                              src={convexImg.thumbnailUrl || convexImg.imageUrl}
                               alt={img.summary}
                               className="h-full w-full object-cover"
                             />
