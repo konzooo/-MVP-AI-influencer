@@ -16,9 +16,9 @@ export default function MigratePage() {
   const [result, setResult] = useState<any>(null);
   const [log, setLog] = useState<string[]>([]);
 
-  const runMigration = async () => {
+  const runMigration = async (force = false) => {
     setStatus("running");
-    setLog(["Starting migration..."]);
+    setLog([force ? "Starting force re-migration (deleting existing first)..." : "Starting migration..."]);
 
     try {
       if (!token) {
@@ -33,7 +33,9 @@ export default function MigratePage() {
         method: "POST",
         headers: {
           "x-convex-auth": token,
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({ force }),
       });
 
       const data = await res.json();
@@ -76,13 +78,26 @@ export default function MigratePage() {
       </p>
 
       <Card className="border-zinc-800 bg-zinc-900 p-6">
-        <Button
-          onClick={runMigration}
-          disabled={status === "running" || status === "done"}
-          className="bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-40"
-        >
-          {status === "running" ? "Migrating..." : status === "done" ? "Done!" : "Run Migration"}
-        </Button>
+        <div className="flex gap-3">
+          <Button
+            onClick={() => runMigration(false)}
+            disabled={status === "running"}
+            className="bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-40"
+          >
+            {status === "running" ? "Migrating..." : "Run Migration"}
+          </Button>
+          <Button
+            onClick={() => runMigration(true)}
+            disabled={status === "running"}
+            variant="outline"
+            className="border-red-800 text-red-400 hover:bg-red-950 disabled:opacity-40"
+          >
+            Force Re-migrate (delete + re-upload all)
+          </Button>
+        </div>
+        <p className="mt-2 text-xs text-zinc-500">
+          Images resized to 1024px max (for generation) + 400px thumbnail (for grid). ~10× smaller than originals.
+        </p>
 
         {log.length > 0 && (
           <div className="mt-4 rounded-lg bg-zinc-950 p-4 font-mono text-xs">

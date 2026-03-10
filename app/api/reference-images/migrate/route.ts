@@ -12,8 +12,15 @@ import { readdir, readFile } from "fs/promises";
 import { join } from "path";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import sharp from "sharp";
 
-const IMAGES_PATH = "/Users/kons/Documents/Side/Images/<alba_ai0>/Training Data set";
+const IMAGES_PATH = "/Users/kons/Documents/Side/Images/<alba_ai0>/Improved Set";
+
+// Max dimensions for the main image (used as FAL reference) and thumbnail (grid UI)
+const FULL_MAX_PX = 1024;
+const THUMB_MAX_PX = 400;
+const JPEG_QUALITY = 85;
 const CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL!;
 
 function parseMetadataFile(content: string) {
@@ -52,6 +59,24 @@ function parseMetadataFile(content: string) {
   return { summary, tags, metadata };
 }
 
+async function resizeImage(buffer: Buffer, maxPx: number): Promise<Buffer> {
+  return sharp(buffer)
+    .resize(maxPx, maxPx, { fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: JPEG_QUALITY })
+    .toBuffer();
+}
+
+async function uploadBuffer(uploadUrl: string, buffer: Buffer): Promise<string> {
+  const res = await fetch(uploadUrl, {
+    method: "POST",
+    headers: { "Content-Type": "image/jpeg" },
+    body: new Uint8Array(buffer),
+  });
+  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+  const { storageId } = await res.json();
+  return storageId;
+}
+
 export async function POST(request: NextRequest) {
   // Safety check: only allow in local dev
   if (process.env.NODE_ENV === "production") {
@@ -70,6 +95,9 @@ export async function POST(request: NextRequest) {
   const client = new ConvexHttpClient(CONVEX_URL);
   client.setAuth(authToken);
 
+  const body = await request.json().catch(() => ({}));
+  const force = body.force === true;
+
   const results: { file: string; status: "ok" | "skip" | "error"; message?: string }[] = [];
 
   try {
@@ -78,7 +106,18 @@ export async function POST(request: NextRequest) {
 
     // Check what's already in Convex
     const existingRefs = await client.query(api.referenceImages.list);
-    const existingFilenames = new Set(existingRefs.map((r: any) => r.filename));
+
+    // If force, delete all existing first
+    if (force && existingRefs.length > 0) {
+      console.log(`[migrate] force=true, deleting ${existingRefs.length} existing records...`);
+      for (const ref of existingRefs) {
+        await client.mutation(api.referenceImages.remove, { id: ref._id });
+      }
+    }
+
+    const existingFilenames = force
+      ? new Set<string>()
+      : new Set(existingRefs.map((r: any) => r.filename));
 
     for (const imageFile of imageFiles) {
       if (existingFilenames.has(imageFile)) {
@@ -96,33 +135,34 @@ export async function POST(request: NextRequest) {
 
       try {
         // Read image
-        const imageBuffer = await readFile(join(IMAGES_PATH, imageFile));
-        const mimeType = imageFile.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
+        const rawBuffer = await readFile(join(IMAGES_PATH, imageFile));
 
         // Read & parse metadata
         const txtContent = await readFile(join(IMAGES_PATH, txtFile), "utf-8");
         const { summary, tags, metadata } = parseMetadataFile(txtContent);
 
-        // Get upload URL from Convex
-        const uploadUrl = await client.mutation(api.referenceImages.generateUploadUrl);
+        // Resize to full (1024px, for FAL) and thumbnail (400px, for grid)
+        const [fullBuffer, thumbBuffer] = await Promise.all([
+          resizeImage(rawBuffer, FULL_MAX_PX),
+          resizeImage(rawBuffer, THUMB_MAX_PX),
+        ]);
 
-        // Upload to Convex storage
-        const uploadRes = await fetch(uploadUrl, {
-          method: "POST",
-          headers: { "Content-Type": mimeType },
-          body: imageBuffer,
-        });
+        // Upload both to Convex storage
+        const [fullUploadUrl, thumbUploadUrl] = await Promise.all([
+          client.mutation(api.referenceImages.generateUploadUrl),
+          client.mutation(api.referenceImages.generateUploadUrl),
+        ]);
 
-        if (!uploadRes.ok) {
-          throw new Error(`Upload failed: ${uploadRes.status}`);
-        }
-
-        const { storageId } = await uploadRes.json();
+        const [storageId, thumbnailStorageId] = await Promise.all([
+          uploadBuffer(fullUploadUrl, fullBuffer),
+          uploadBuffer(thumbUploadUrl, thumbBuffer),
+        ]);
 
         // Create DB record
         await client.mutation(api.referenceImages.create, {
           filename: imageFile,
-          storageId,
+          storageId: storageId as Id<"_storage">,
+          thumbnailStorageId: thumbnailStorageId as Id<"_storage">,
           summary,
           tags,
           metadata,
