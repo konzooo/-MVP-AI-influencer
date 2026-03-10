@@ -604,6 +604,12 @@ export function PostViewModal({
       (u) => u.startsWith("https://") || u.startsWith("http://")
     );
   }
+  // For from_own_images: fall back to the user-provided generated image
+  if (sourceImages.length === 0 && post.creationMode === "from_own_images") {
+    sourceImages = post.generatedImages
+      .filter((g) => g.userProvided && g.url.startsWith("http"))
+      .map((g) => g.url);
+  }
 
   const needsLibraryRef =
     post.creationMode === "copy_post" || post.creationMode === "from_scratch";
