@@ -215,7 +215,15 @@ export function loadIdentity(): InfluencerIdentity {
     if (typeof window === "undefined") return DEFAULT_IDENTITY;
     const stored = localStorage.getItem("ai-influencer-identity");
     if (!stored) return DEFAULT_IDENTITY;
-    return JSON.parse(stored);
+    const parsed = JSON.parse(stored);
+    // Merge with defaults so new scalar/array fields are always backfilled.
+    // Arrays (styleModes, contentThemes) are user-owned — keep stored if present.
+    return {
+      ...DEFAULT_IDENTITY,
+      ...parsed,
+      styleModes: parsed.styleModes?.length ? parsed.styleModes : DEFAULT_IDENTITY.styleModes,
+      contentThemes: parsed.contentThemes?.length ? parsed.contentThemes : DEFAULT_IDENTITY.contentThemes,
+    };
   } catch {
     return DEFAULT_IDENTITY;
   }
