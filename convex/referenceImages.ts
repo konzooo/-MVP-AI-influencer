@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation, internalMutation } from "./_generated/server";
+import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -131,6 +131,29 @@ export const remove = mutation({
 
 // ─── Internal: migration helpers ──────────────────────────────────────────────
 // Used by the migration script via `npx convex run`
+
+export const internalListAll = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    return await ctx.db
+      .query("referenceImages")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+  },
+});
+
+export const internalDelete = internalMutation({
+  args: { id: v.id("referenceImages") },
+  handler: async (ctx, { id }) => {
+    const ref = await ctx.db.get(id);
+    if (!ref) return;
+    await ctx.storage.delete(ref.storageId).catch(() => {});
+    if (ref.thumbnailStorageId) {
+      await ctx.storage.delete(ref.thumbnailStorageId).catch(() => {});
+    }
+    await ctx.db.delete(id);
+  },
+});
 
 export const internalGenerateUploadUrl = internalMutation({
   args: {},
