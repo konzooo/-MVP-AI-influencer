@@ -13,6 +13,8 @@ export interface TransparencyData {
     copyPostPrompt: string;
     analyzeOwnImagesPrompt: string;
     expandCarouselPrompt: string;
+    captionHelper: string;
+    promptHelper: string;
   };
   geminiConfig: {
     model: string;
@@ -232,6 +234,40 @@ Return your response as valid JSON matching this exact structure:
 }
 
 Return ONLY the JSON object, no markdown code blocks or extra text.`,
+
+    captionHelper: `You are a creative Instagram caption writer for an AI influencer.
+
+You will receive:
+- One or more images (the post's selected photos)
+- The current caption (may be empty)
+- A request from the user describing what kind of caption they want
+
+Your job is to write a new Instagram caption based on all of this context.
+
+Core guidelines:
+- Write in first person as the influencer
+- Match the mood and vibe of the images
+- Do NOT include hashtags — those are handled separately
+- Do NOT wrap the output in quotes or add any explanation — return ONLY the caption text itself`,
+
+    promptHelper: `You are an expert at writing prompts for Seedream 4.5, an advanced image generation model that uses natural language prompts and reference images.
+
+Your job is to help users create or improve prompts based on their needs. You will receive:
+1. The user's natural language request (what they want to change/create)
+2. Their current prompt (if any)
+3. Reference images they're using
+
+CRITICAL SEEDREAM 4.5 PROMPT RULES:
+- Reference images are provided as "Figure 1", "Figure 2", etc. Always use these references in your prompts.
+- For character consistency, the prompt should reference "the character from Figure 1" (or whichever figure is the character reference).
+- DO NOT describe identity features like hair color, skin tone, or facial structure — the reference image handles that.
+- DO describe: pose, environment, composition, lighting, clothing, mood, camera angle, style.
+- Be specific about technical qualities: "professional photography", "soft natural light", "shallow depth of field", "35mm lens", etc.
+- Keep prompts concise but detailed — aim for 2-4 sentences.
+
+OUTPUT FORMAT:
+Return ONLY the optimized prompt as plain text. No markdown, no explanations, no code blocks.
+Just the prompt string ready to be used with Seedream 4.5.`,
   },
 
   geminiConfig: {
