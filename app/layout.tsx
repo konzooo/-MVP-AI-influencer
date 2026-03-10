@@ -32,13 +32,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
       >
         <ConvexClientProvider>
-          <AuthGate>
-            <div className="flex h-screen overflow-hidden bg-zinc-950">
-              <Sidebar />
-              <main className="flex-1 overflow-auto">{children}</main>
-            </div>
-            <Toaster position="bottom-right" />
+          <AuthGate sidebar={<Sidebar />}>
+            {children}
           </AuthGate>
+          <Toaster position="bottom-right" />
         </ConvexClientProvider>
       </body>
     </html>

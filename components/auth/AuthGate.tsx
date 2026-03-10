@@ -6,7 +6,12 @@ import { ReactNode, useEffect } from "react";
 
 const PUBLIC_ROUTES = ["/login"];
 
-export function AuthGate({ children }: { children: ReactNode }) {
+interface AuthGateProps {
+  children: ReactNode;
+  sidebar?: ReactNode;
+}
+
+export function AuthGate({ children, sidebar }: AuthGateProps) {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const pathname = usePathname();
   const router = useRouter();
@@ -33,5 +38,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return null;
   }
 
-  return <>{children}</>;
+  // Public routes (e.g. /login) — no sidebar
+  if (isPublicRoute) {
+    return <>{children}</>;
+  }
+
+  // Authenticated app shell
+  return (
+    <div className="flex h-screen overflow-hidden bg-zinc-950">
+      {sidebar}
+      <main className="flex-1 overflow-auto">{children}</main>
+    </div>
+  );
 }

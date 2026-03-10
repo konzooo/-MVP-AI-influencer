@@ -173,7 +173,7 @@ export function PostViewModal({
 
   const actions = usePostActions();
   const instagram = useInstagramAccount();
-  const { posts: allPosts } = usePostStore();
+  const { posts: allPosts, deletePost } = usePostStore();
 
   // ─── Load post (reactive via Convex) ──────────────────────────────────────
 
@@ -466,7 +466,6 @@ export function PostViewModal({
 
   const handleDeletePost = () => {
     if (!post) return;
-    const { deletePost } = require("@/lib/store");
     deletePost(post.id);
     onDelete?.(post.id);
     onOpenChange(false);

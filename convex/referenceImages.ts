@@ -129,8 +129,15 @@ export const remove = mutation({
   },
 });
 
-// ─── Internal: migration helper ───────────────────────────────────────────────
-// Used by the migration script via `npx convex run referenceImages:internalCreate`
+// ─── Internal: migration helpers ──────────────────────────────────────────────
+// Used by the migration script via `npx convex run`
+
+export const internalGenerateUploadUrl = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.storage.generateUploadUrl();
+  },
+});
 
 export const internalCreate = internalMutation({
   args: {
