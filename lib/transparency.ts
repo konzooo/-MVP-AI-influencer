@@ -51,6 +51,7 @@ export interface TransparencyData {
     carouselMaxSlides: number;
     carouselMinSlides: number;
   };
+  captionStyle: string;
 }
 
 export const DEFAULT_TRANSPARENCY: TransparencyData = {
@@ -97,6 +98,9 @@ Return your response as valid JSON matching this exact structure:
 For carousels, generate exactly 3 imagePrompts (one per slide) that form a cohesive set.
 {{CAROUSEL_STYLE_INSTRUCTION}}
 For stories, keep captions short/punchy and note it's vertical 9:16 format.
+
+CAPTION STYLE GUIDE:
+{{CAPTION_STYLE}}
 
 Return ONLY the JSON object, no markdown code blocks or extra text.`,
 
@@ -165,6 +169,9 @@ For carousels, ALWAYS generate exactly 3 imagePrompts — regardless of how many
 
 IMPORTANT: The referenceImageAnalysis is shown to the user for transparency — include identity features there so they can verify what the AI detected. Keep them completely OUT of the generation prompt.
 
+CAPTION STYLE GUIDE:
+{{CAPTION_STYLE}}
+
 Return ONLY the JSON object, no markdown code blocks or extra text.`,
 
     analyzeOwnImagesPrompt: `You are an expert Instagram content strategist analyzing user-provided images for posting.
@@ -177,12 +184,8 @@ Your job:
 3. Suggest relevant hashtags
 4. Write a descriptive title for internal organization
 
-Guidelines for captions:
-- Write in first person as the AI influencer
-- Be authentic, engaging, and conversational
-- Match the mood/vibe of the images
-- Include 2-4 lines with natural line breaks (use \\n)
-- Don't over-explain — let the images speak
+CAPTION STYLE GUIDE:
+{{CAPTION_STYLE}}
 
 Return your response as valid JSON matching this structure:
 {
@@ -209,11 +212,8 @@ The user has uploaded their own image that they want to use as the FIRST slide o
 
 {{CAROUSEL_STYLE_INSTRUCTION}}
 
-Guidelines for captions:
-- Write in first person as the AI influencer
-- Be authentic, engaging, and conversational
-- Match the mood/vibe of the images
-- Include 2-4 lines with natural line breaks (use \\n)
+CAPTION STYLE GUIDE:
+{{CAPTION_STYLE}}
 
 Return your response as valid JSON matching this exact structure:
 {
@@ -308,6 +308,8 @@ Just the prompt string ready to be used with Seedream 4.5.`,
     carouselMaxSlides: 10,
     carouselMinSlides: 2,
   },
+
+  captionStyle: `Write captions that sound authentic and human — like a real American influencer girl would write them, not a brand or a bot. Match the mood and atmosphere of the image. The caption doesn't always need to describe what's in the photo — it can be witty, abstract, or just a feeling. Keep it short: 1 line, 2 max. Occasionally end with a question to keep the audience engaged, but only if it feels completely natural — never forced.`,
 };
 
 // ─── Carousel Style Instructions ─────────────────────────────────────────────
@@ -341,6 +343,28 @@ const CAROUSEL_STYLE_INSTRUCTIONS: Record<CarouselStyle, string> = {
  */
 export function resolveCarouselStyle(prompt: string, style: CarouselStyle): string {
   return prompt.replace("{{CAROUSEL_STYLE_INSTRUCTION}}", CAROUSEL_STYLE_INSTRUCTIONS[style]);
+}
+
+/**
+ * Resolves {{CAPTION_STYLE}} placeholders in a prompt string.
+ * Falls back to the default caption style from transparency config.
+ */
+export function resolveCaptionStyle(prompt: string, captionStyle?: string): string {
+  return prompt.replace("{{CAPTION_STYLE}}", captionStyle ?? DEFAULT_TRANSPARENCY.captionStyle);
+}
+
+/**
+ * Resolves all placeholders in a prompt string.
+ */
+export function resolvePrompt(prompt: string, options: { carouselStyle?: CarouselStyle; captionStyle?: string }): string {
+  let resolved = prompt;
+  if (options.carouselStyle) {
+    resolved = resolveCarouselStyle(resolved, options.carouselStyle);
+  } else {
+    resolved = resolved.replace("{{CAROUSEL_STYLE_INSTRUCTION}}", "");
+  }
+  resolved = resolveCaptionStyle(resolved, options.captionStyle);
+  return resolved;
 }
 
 /**

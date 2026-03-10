@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { images, notes, personaContext } = body;
+    const { images, notes, personaContext, captionStyle } = body;
 
     if (!images || !Array.isArray(images) || images.length === 0) {
       return NextResponse.json(
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await analyzeImagesWithGemini(images, notes || "", apiKey, personaContext);
+    const result = await analyzeImagesWithGemini(images, notes || "", apiKey, personaContext, captionStyle);
 
     return NextResponse.json(result);
   } catch (error) {

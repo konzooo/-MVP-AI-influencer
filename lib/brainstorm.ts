@@ -4,6 +4,7 @@ import { PostPlan, CreationMode, PostType, createEmptyPost } from "./types";
 import { savePostToConvex as savePost } from "./convex";
 import { loadIdentity, buildPersonaContext } from "./identity";
 import { loadAISettings } from "./ai-settings";
+import { loadTransparency } from "./transparency";
 
 /**
  * Creates a new post by brainstorming/analyzing based on creation mode.
@@ -24,10 +25,11 @@ export async function brainstormPost(params: {
     ? buildPersonaContext(identity)
     : undefined;
   const aiSettings = loadAISettings();
+  const captionStyle = loadTransparency().captionStyle;
 
   if (creationMode === "from_own_images") {
     console.log("[brainstormPost] Starting from_own_images flow");
-    return brainstormOwnImages({ idea, images, postType, personaContext, carouselStyle: aiSettings.carouselStyle });
+    return brainstormOwnImages({ idea, images, postType, personaContext, carouselStyle: aiSettings.carouselStyle, captionStyle });
   }
 
   // Normal brainstorm flow (from_scratch or copy_post)
@@ -47,6 +49,7 @@ export async function brainstormPost(params: {
       personaContext,
       aiProvider,
       carouselStyle: aiSettings.carouselStyle,
+      captionStyle,
     }),
   });
 
@@ -122,8 +125,9 @@ async function brainstormOwnImages(params: {
   postType: PostType;
   personaContext?: string;
   carouselStyle?: string;
+  captionStyle?: string;
 }): Promise<PostPlan> {
-  const { idea, images, postType, personaContext, carouselStyle } = params;
+  const { idea, images, postType, personaContext, carouselStyle, captionStyle } = params;
 
   console.log("[brainstormOwnImages] Starting", { postType, numImages: images.length });
 
@@ -133,7 +137,7 @@ async function brainstormOwnImages(params: {
     const expandResponse = await fetch("/api/expand-carousel", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image: images[0], notes: idea, personaContext, carouselStyle }),
+      body: JSON.stringify({ image: images[0], notes: idea, personaContext, carouselStyle, captionStyle }),
     });
 
     if (!expandResponse.ok) {
@@ -192,7 +196,7 @@ async function brainstormOwnImages(params: {
   const response = await fetch("/api/analyze-images", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ images, notes: idea, personaContext }),
+    body: JSON.stringify({ images, notes: idea, personaContext, captionStyle }),
   });
 
   if (!response.ok) {

@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { image, notes, personaContext, carouselStyle } = await request.json();
+    const { image, notes, personaContext, carouselStyle, captionStyle } = await request.json();
 
     if (!image) {
       return NextResponse.json(
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await expandOwnImageForCarousel(image, notes || "", apiKey, personaContext, carouselStyle);
+    const result = await expandOwnImageForCarousel(image, notes || "", apiKey, personaContext, carouselStyle, captionStyle);
     return NextResponse.json(result);
   } catch (error) {
     console.error("Expand carousel error:", error);

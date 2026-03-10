@@ -437,6 +437,39 @@ export default function TransparencyPage() {
             )}
           </Card>
 
+          {/* Caption Style */}
+          <Card className="border-zinc-800 bg-zinc-900/50 overflow-hidden">
+            <SectionHeader section="caption-style" title="Caption Style" />
+            {expandedSections["caption-style"] && (
+              <div className="border-t border-zinc-800 p-4 space-y-3">
+                <p className="text-xs text-zinc-400">
+                  Injected into all brainstorm prompts via{" "}
+                  <span className="font-mono text-zinc-300">{"{{CAPTION_STYLE}}"}</span> — controls
+                  how the AI writes captions for every new post.
+                </p>
+                {isEditMode ? (
+                  <Textarea
+                    value={data.captionStyle}
+                    onChange={(e) => setData({ ...data, captionStyle: e.target.value })}
+                    className="min-h-[120px] border-zinc-700 bg-zinc-900 text-zinc-100 font-mono text-xs"
+                  />
+                ) : (
+                  <div className="relative">
+                    <pre className="bg-zinc-950 p-3 rounded text-xs text-zinc-300 whitespace-pre-wrap break-words overflow-x-auto max-h-[200px] overflow-y-auto">
+                      {data.captionStyle}
+                    </pre>
+                    <button
+                      onClick={() => copyToClipboard(data.captionStyle)}
+                      className="absolute top-2 right-2 p-2 hover:bg-zinc-900 rounded transition-colors"
+                    >
+                      <Copy className="h-3.5 w-3.5 text-zinc-500 hover:text-zinc-300" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+
           {/* Gemini Config */}
           <Card className="border-zinc-800 bg-zinc-900/50 overflow-hidden">
             <SectionHeader section="gemini-config" title="Gemini Configuration" />

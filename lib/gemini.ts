@@ -1,5 +1,5 @@
 import { CreationMode, PostType } from "./types";
-import { DEFAULT_TRANSPARENCY, resolveCarouselStyle } from "./transparency";
+import { DEFAULT_TRANSPARENCY, resolvePrompt } from "./transparency";
 import type { CarouselStyle } from "./ai-settings";
 
 // ─── System Prompts — single source of truth is lib/transparency.ts ──────────
@@ -11,9 +11,9 @@ const { fromScratchPrompt: FROM_SCRATCH_PROMPT, copyPostPrompt: COPY_POST_PROMPT
 
 // ─── Prompt selector ─────────────────────────────────────────────────────────
 
-function getSystemPrompt(mode: CreationMode, carouselStyle: CarouselStyle = "quick_snaps"): string {
+function getSystemPrompt(mode: CreationMode, carouselStyle: CarouselStyle = "quick_snaps", captionStyle?: string): string {
   const raw = mode === "copy_post" ? COPY_POST_PROMPT : FROM_SCRATCH_PROMPT;
-  return resolveCarouselStyle(raw, carouselStyle);
+  return resolvePrompt(raw, { carouselStyle, captionStyle });
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -86,7 +86,8 @@ export async function brainstormWithGemini(
   req: BrainstormRequest,
   apiKey: string,
   personaContext?: string,
-  carouselStyle?: CarouselStyle
+  carouselStyle?: CarouselStyle,
+  captionStyle?: string
 ) {
   const parts: GeminiPart[] = [];
 
@@ -128,7 +129,7 @@ export async function brainstormWithGemini(
     throw new Error("Please provide an idea or upload an image");
   }
 
-  let systemPrompt = getSystemPrompt(req.creationMode, carouselStyle);
+  let systemPrompt = getSystemPrompt(req.creationMode, carouselStyle, captionStyle);
   if (personaContext) {
     systemPrompt = `${personaContext}\n\n${systemPrompt}`;
   }
@@ -157,7 +158,8 @@ export async function analyzeImagesWithGemini(
   images: string[], // base64 data URIs
   notes: string, // optional user notes about caption style, context, etc.
   apiKey: string,
-  personaContext?: string
+  personaContext?: string,
+  captionStyle?: string
 ) {
   const parts: GeminiPart[] = [];
 
@@ -182,7 +184,7 @@ export async function analyzeImagesWithGemini(
     }
   }
 
-  let systemPrompt = ANALYZE_OWN_IMAGES_PROMPT;
+  let systemPrompt = resolvePrompt(ANALYZE_OWN_IMAGES_PROMPT, { captionStyle });
   if (personaContext) {
     systemPrompt = `${personaContext}\n\n${systemPrompt}`;
   }
@@ -211,7 +213,8 @@ export async function expandOwnImageForCarousel(
   notes: string,
   apiKey: string,
   personaContext?: string,
-  carouselStyle?: CarouselStyle
+  carouselStyle?: CarouselStyle,
+  captionStyle?: string
 ) {
   const parts: GeminiPart[] = [];
 
@@ -238,7 +241,7 @@ export async function expandOwnImageForCarousel(
     throw new Error("Invalid image format — expected base64 data URI");
   }
 
-  let systemPrompt = resolveCarouselStyle(EXPAND_OWN_IMAGE_CAROUSEL_PROMPT, carouselStyle || "quick_snaps");
+  let systemPrompt = resolvePrompt(EXPAND_OWN_IMAGE_CAROUSEL_PROMPT, { carouselStyle: carouselStyle || "quick_snaps", captionStyle });
   if (personaContext) {
     systemPrompt = `${personaContext}\n\n${systemPrompt}`;
   }
