@@ -30,8 +30,7 @@ CRITICAL OUTPUT RULES:
 - Do NOT include hashtags — those are handled separately
 - Do NOT wrap the output in quotes or add explanations
 - Return ONLY the improved caption text itself
-- Preserve the core message if there's an existing caption; refine and improve it
-- LENGTH: Maximum 2 lines unless the user explicitly requests more — short is the style, not a constraint to work around`;
+- Preserve the core message if there's an existing caption; refine and improve it`;
 
   const identitySection = identityContext?.trim()
     ? `\n\nINFLUENCER PERSONA:\n${identityContext}`

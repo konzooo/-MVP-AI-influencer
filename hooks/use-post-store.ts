@@ -30,11 +30,10 @@ export function usePostStore() {
 
   const updatePost = useCallback(
     async (post: PostPlan) => {
-      const { id, ...rest } = post as any;
-      const _id = (post as any)._id as Id<"posts"> | undefined;
+      const { id, _id, _creationTime, userId, ...rest } = post as any;
       await saveMutation({
         ...rest,
-        id: _id,
+        id: _id as Id<"posts"> | undefined,
         externalId: id,
         updatedAt: new Date().toISOString(),
       });

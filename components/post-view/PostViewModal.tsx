@@ -46,6 +46,7 @@ import { InstagramPreview } from "@/components/post-manager/InstagramPreview";
 import { PublishProgress } from "@/components/post-manager/PublishProgress";
 import { AccountStatus } from "@/components/post-manager/AccountStatus";
 import { CaptionHelperDialog } from "@/components/post-manager/CaptionHelperDialog";
+import { EmojiPicker } from "@/components/post-manager/EmojiPicker";
 import { PromptHelperDialog } from "@/components/image-generation/PromptHelperDialog";
 import {
   GenerationControls,
@@ -750,19 +751,28 @@ export function PostViewModal({
                           }}
                           onBlur={() => setEditingCaption(false)}
                           autoFocus
-                          className="min-h-[80px] resize-y border-zinc-800 bg-zinc-900 text-sm text-zinc-200"
+                          className="min-h-[80px] resize-y border-zinc-800 bg-zinc-900 pb-8 text-sm text-zinc-200"
                         />
-                        <button
-                          type="button"
-                          onMouseDown={(e) => {
-                            e.preventDefault(); // prevent textarea blur
-                            setCaptionHelperOpen(true);
-                          }}
-                          className="absolute right-2 top-2 flex items-center gap-1 rounded px-2 py-1 text-[10px] text-violet-400 transition-colors hover:bg-violet-950/50 hover:text-violet-300 bg-zinc-900/70 backdrop-blur-sm"
-                        >
-                          <Sparkles className="h-3 w-3" />
-                          AI Helper
-                        </button>
+                        <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                          <EmojiPicker
+                            onSelect={(emoji) => {
+                              const updated = { ...post, caption: post.caption + emoji };
+                              setPost(updated);
+                              savePost(updated);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setCaptionHelperOpen(true);
+                            }}
+                            className="flex items-center gap-1 rounded px-2 py-1 text-[10px] text-violet-400 transition-colors hover:bg-violet-950/50 hover:text-violet-300 bg-zinc-900/70 backdrop-blur-sm"
+                          >
+                            <Sparkles className="h-3 w-3" />
+                            AI Helper
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ) : post.caption ? (
@@ -1384,20 +1394,28 @@ export function PostViewModal({
                               setCaption(e.target.value);
                               setCaptionDirty(true);
                             }}
-                            className="min-h-[100px] resize-none border-zinc-800 bg-zinc-900 text-xs text-zinc-100"
+                            className="min-h-[100px] resize-none border-zinc-800 bg-zinc-900 pb-8 text-xs text-zinc-100"
                             placeholder="Instagram caption"
                           />
-                          <button
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              setCaptionHelperOpen(true);
-                            }}
-                            className="absolute right-2 top-2 flex items-center gap-1 rounded px-2 py-1 text-[10px] text-violet-400 transition-colors hover:bg-violet-950/50 hover:text-violet-300 bg-zinc-900/70 backdrop-blur-sm"
-                          >
-                            <Sparkles className="h-3 w-3" />
-                            AI Helper
-                          </button>
+                          <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                            <EmojiPicker
+                              onSelect={(emoji) => {
+                                setCaption((prev) => prev + emoji);
+                                setCaptionDirty(true);
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setCaptionHelperOpen(true);
+                              }}
+                              className="flex items-center gap-1 rounded px-2 py-1 text-[10px] text-violet-400 transition-colors hover:bg-violet-950/50 hover:text-violet-300 bg-zinc-900/70 backdrop-blur-sm"
+                            >
+                              <Sparkles className="h-3 w-3" />
+                              AI Helper
+                            </button>
+                          </div>
                         </div>
                       </div>
 
