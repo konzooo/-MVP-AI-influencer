@@ -79,3 +79,18 @@ export async function deleteTaskFromConvex(externalId: string): Promise<void> {
   const client = getConvexClient();
   await client.mutation(api.tasks.removeByExternalId, { externalId });
 }
+
+/**
+ * Imperative loadReferenceImages — returns all reference images for the current user.
+ * Maps Convex storage URLs to the ReferenceImage shape (imagePath/thumbnailPath).
+ */
+export async function loadReferenceImagesFromConvex() {
+  const client = getConvexClient();
+  const docs = await client.query(api.referenceImages.list);
+  return docs.map((doc: any) => ({
+    ...doc,
+    id: doc._id,
+    imagePath: doc.imageUrl,
+    thumbnailPath: doc.thumbnailUrl || doc.imageUrl,
+  }));
+}

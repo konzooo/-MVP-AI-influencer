@@ -11,9 +11,8 @@ import {
   PostPlan,
   PostType,
 } from "./types";
-import { savePostToConvex as savePostState } from "./convex";
+import { savePostToConvex as savePostState, saveTaskToConvex as saveTask, loadReferenceImagesFromConvex } from "./convex";
 import { loadIdentity } from "./identity";
-import { saveTaskToConvex as saveTask } from "./convex";
 import { computeNextRunAt } from "./task-utils";
 import {
   selectCharacterReference,
@@ -80,15 +79,7 @@ export async function generatePostImages(
       log.add(`Using stored character reference (legacy): ${post.selectedCharacterRefId}`);
     } else {
       log.add(`No stored ref — fetching reference library...`);
-      const refsRes = await fetch("/api/reference-images");
-      if (!refsRes.ok) {
-        result.error = "Could not fetch reference library";
-        log.add(`ERROR: ${result.error}`);
-        return result;
-      }
-
-      const refsData = await refsRes.json();
-      const refs: ReferenceImage[] = refsData.images || [];
+      const refs: ReferenceImage[] = await loadReferenceImagesFromConvex().catch(() => []);
       if (refs.length === 0) {
         result.error = "No character references in library";
         log.add(`ERROR: ${result.error}`);
@@ -554,27 +545,23 @@ export async function runTask(
     // (so it stays consistent across modal opens and generation)
     if (post.creationMode !== "from_own_images") {
       try {
-        const refsRes = await fetch("/api/reference-images");
-        if (refsRes.ok) {
-          const refsData = await refsRes.json();
-          const refs: ReferenceImage[] = refsData.images || [];
-          if (refs.length > 0) {
-            let refContext;
-            if (selectedItem.type === "from_scratch") {
-              const item = selectedItem as FromScratchInspirationItem;
-              refContext = item.preferredStyleMode
-                ? buildContextFromStyleMode(item.preferredStyleMode)
-                : buildContextFromKeywords([post.title, post.description].filter(Boolean).join(" "));
-            } else {
-              refContext = buildContextFromKeywords([post.title, post.description, post.caption].filter(Boolean).join(" "));
-            }
-            const charRef = selectCharacterReference(refs, refContext);
-            if (charRef) {
-              post.selectedCharacterRefId = charRef.id;
-              post.selectedCharacterRefPath = charRef.imagePath;
-              post.characterRefs = [{ id: charRef.id, path: charRef.imagePath }];
-              log.add(`Character reference selected: ${charRef.id}`);
-            }
+        const refs: ReferenceImage[] = await loadReferenceImagesFromConvex().catch(() => []);
+        if (refs.length > 0) {
+          let refContext;
+          if (selectedItem.type === "from_scratch") {
+            const item = selectedItem as FromScratchInspirationItem;
+            refContext = item.preferredStyleMode
+              ? buildContextFromStyleMode(item.preferredStyleMode)
+              : buildContextFromKeywords([post.title, post.description].filter(Boolean).join(" "));
+          } else {
+            refContext = buildContextFromKeywords([post.title, post.description, post.caption].filter(Boolean).join(" "));
+          }
+          const charRef = selectCharacterReference(refs, refContext);
+          if (charRef) {
+            post.selectedCharacterRefId = charRef.id;
+            post.selectedCharacterRefPath = charRef.imagePath;
+            post.characterRefs = [{ id: charRef.id, path: charRef.imagePath }];
+            log.add(`Character reference selected: ${charRef.id}`);
           }
         }
       } catch (err) {
