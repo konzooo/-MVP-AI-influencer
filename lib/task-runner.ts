@@ -66,47 +66,51 @@ export async function generatePostImages(
     post.status = "generating";
     savePostState(post);
 
-    // Resolve character references — use stored refs if available, otherwise select fresh
+    // Resolve character references — not needed for from_own_images (user's image IS the reference)
     // Supports new multi-ref format (characterRefs[]) and legacy single ref
     let charRefPaths: { id: string; path: string }[] = [];
 
-    if (post.characterRefs && post.characterRefs.length > 0) {
-      charRefPaths = post.characterRefs;
-      log.add(`Using ${charRefPaths.length} stored character reference(s): ${charRefPaths.map(r => r.id).join(", ")}`);
-    } else if (post.selectedCharacterRefId && post.selectedCharacterRefPath) {
-      // Legacy single ref
-      charRefPaths = [{ id: post.selectedCharacterRefId, path: post.selectedCharacterRefPath }];
-      log.add(`Using stored character reference (legacy): ${post.selectedCharacterRefId}`);
+    if (post.creationMode !== "from_own_images") {
+      if (post.characterRefs && post.characterRefs.length > 0) {
+        charRefPaths = post.characterRefs;
+        log.add(`Using ${charRefPaths.length} stored character reference(s): ${charRefPaths.map(r => r.id).join(", ")}`);
+      } else if (post.selectedCharacterRefId && post.selectedCharacterRefPath) {
+        // Legacy single ref
+        charRefPaths = [{ id: post.selectedCharacterRefId, path: post.selectedCharacterRefPath }];
+        log.add(`Using stored character reference (legacy): ${post.selectedCharacterRefId}`);
+      } else {
+        log.add(`No stored ref — fetching reference library...`);
+        const refs: ReferenceImage[] = await loadReferenceImagesFromConvex().catch(() => []);
+        if (refs.length === 0) {
+          result.error = "No character references in library";
+          log.add(`ERROR: ${result.error}`);
+          return result;
+        }
+
+        let refContext = buildContextFromStyleMode(post.title);
+        if (options.styleModeHint) {
+          refContext = buildContextFromStyleMode(options.styleModeHint);
+        }
+
+        const charRef = selectCharacterReference(refs, refContext);
+        if (!charRef) {
+          result.error = "Failed to select character reference";
+          log.add(`ERROR: ${result.error}`);
+          return result;
+        }
+
+        charRefPaths = [{ id: charRef.id, path: charRef.imagePath }];
+
+        // Persist selection on the post so it's stable for future runs
+        post.selectedCharacterRefId = charRef.id;
+        post.selectedCharacterRefPath = charRef.imagePath;
+        post.characterRefs = charRefPaths;
+        savePostState(post);
+
+        log.add(`Selected character reference: ${charRef.id}`);
+      }
     } else {
-      log.add(`No stored ref — fetching reference library...`);
-      const refs: ReferenceImage[] = await loadReferenceImagesFromConvex().catch(() => []);
-      if (refs.length === 0) {
-        result.error = "No character references in library";
-        log.add(`ERROR: ${result.error}`);
-        return result;
-      }
-
-      let refContext = buildContextFromStyleMode(post.title);
-      if (options.styleModeHint) {
-        refContext = buildContextFromStyleMode(options.styleModeHint);
-      }
-
-      const charRef = selectCharacterReference(refs, refContext);
-      if (!charRef) {
-        result.error = "Failed to select character reference";
-        log.add(`ERROR: ${result.error}`);
-        return result;
-      }
-
-      charRefPaths = [{ id: charRef.id, path: charRef.imagePath }];
-
-      // Persist selection on the post so it's stable for future runs
-      post.selectedCharacterRefId = charRef.id;
-      post.selectedCharacterRefPath = charRef.imagePath;
-      post.characterRefs = charRefPaths;
-      savePostState(post);
-
-      log.add(`Selected character reference: ${charRef.id}`);
+      log.add(`from_own_images: using user-provided image as reference`);
     }
 
     // Upload all character references to fal storage so they're publicly accessible
