@@ -14,7 +14,6 @@ interface ClaudeBrainstormRequest {
   postType: PostType;
   personaContext?: string;
   carouselStyle?: CarouselStyle;
-  captionStyle?: string;
 }
 
 export async function brainstormWithClaude(
@@ -34,7 +33,7 @@ export async function brainstormWithClaude(
     userMessage += `\n\nPost type: ${request.postType}. Generate 1 image prompt.`;
   }
 
-  let systemPrompt = resolvePrompt(FROM_SCRATCH_PROMPT, { carouselStyle: request.carouselStyle || "quick_snaps", captionStyle: request.captionStyle });
+  let systemPrompt = resolvePrompt(FROM_SCRATCH_PROMPT, { carouselStyle: request.carouselStyle || "quick_snaps" });
   if (request.personaContext) {
     systemPrompt = `${request.personaContext}\n\n${systemPrompt}`;
   }
