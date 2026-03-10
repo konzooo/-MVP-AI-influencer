@@ -8,6 +8,8 @@ import { savePostToConvex as savePost } from "@/lib/convex";
 import { usePostStore } from "@/hooks/use-post-store";
 import { usePostActions } from "@/hooks/use-post-actions";
 import { useInstagramAccount } from "@/hooks/use-instagram-account";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { canPublish as checkRateLimit } from "@/lib/instagram-rate-limit";
 import {
   Dialog,
@@ -32,6 +34,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { InstagramPreview } from "@/components/post-manager/InstagramPreview";
 import { PublishProgress } from "@/components/post-manager/PublishProgress";
@@ -174,6 +183,8 @@ export function PostViewModal({
   const actions = usePostActions();
   const instagram = useInstagramAccount();
   const { posts: allPosts, deletePost } = usePostStore();
+  const convexRefs = useQuery(api.referenceImages.list) ?? [];
+  const guides = useQuery(api.aiGuides.get);
 
   // ─── Load post (reactive via Convex) ──────────────────────────────────────
 
@@ -217,7 +228,7 @@ export function PostViewModal({
 
   // Convex reactivity handles generation updates — no polling needed
 
-  // Load reference library
+  // Load reference library (reactive via Convex)
   useEffect(() => {
     if (!open || !post) return;
     const needsLibRef =
@@ -228,47 +239,51 @@ export function PostViewModal({
       return;
     }
 
-    setRefLoading(true);
-    fetch("/api/reference-images")
-      .then((res) => res.json())
-      .then((data) => {
-        const refs: ReferenceImage[] = data.images || [];
+    // Map Convex docs to ReferenceImage shape
+    const refs: ReferenceImage[] = convexRefs.map((r: any) => ({
+      id: r._id as string,
+      filename: r.filename,
+      imagePath: r.imageUrl ?? "",
+      thumbnailPath: r.thumbnailUrl ?? r.imageUrl ?? "",
+      imageUrl: r.imageUrl,
+      thumbnailUrl: r.thumbnailUrl,
+      summary: r.summary ?? "",
+      tags: r.tags ?? [],
+      metadata: r.metadata ?? {},
+      createdAt: r.createdAt ?? "",
+    }));
 
-        // Load stored refs: new array format or legacy single
-        if (post.characterRefs && post.characterRefs.length > 0) {
-          const stored = post.characterRefs
-            .map((cr) => {
-              // Uploaded refs (base64 path) — reconstruct ReferenceImage
-              if (cr.id.startsWith("upload-")) {
-                return {
-                  id: cr.id,
-                  filename: "uploaded",
-                  imagePath: cr.path,
-                  thumbnailPath: cr.path,
-                  summary: "Uploaded image",
-                  tags: [],
-                  metadata: { schema_version: "1", indoor_outdoor: "unknown", place: { type: "unknown", detail: "" }, capture_method: "front_selfie", framing: "chest_up", expression: { type: "neutral", mouth: "closed", detail: "" }, time_of_day: "unknown", image_style: { color: "color", detail: "" } },
-                  createdAt: new Date().toISOString(),
-                } as ReferenceImage;
-              }
-              // Library refs — find by ID
-              return refs.find((r) => r.id === cr.id);
-            })
-            .filter(Boolean) as ReferenceImage[];
-          setSelectedRefs(stored);
-        } else if (post.selectedCharacterRefId) {
-          // Legacy single ref migration
-          const stored = refs.find((r) => r.id === post.selectedCharacterRefId);
-          setSelectedRefs(stored ? [stored] : []);
-        } else {
-          setSelectedRefs([]);
-        }
-      })
-      .catch(() => {
-        setSelectedRefs([]);
-      })
-      .finally(() => setRefLoading(false));
-  }, [open, post?.id, post?.selectedCharacterRefId]);
+    // Load stored refs: new array format or legacy single
+    if (post.characterRefs && post.characterRefs.length > 0) {
+      const stored = post.characterRefs
+        .map((cr) => {
+          // Uploaded refs (base64 path) — reconstruct ReferenceImage
+          if (cr.id.startsWith("upload-")) {
+            return {
+              id: cr.id,
+              filename: "uploaded",
+              imagePath: cr.path,
+              thumbnailPath: cr.path,
+              summary: "Uploaded image",
+              tags: [],
+              metadata: { schema_version: "1", indoor_outdoor: "unknown", place: { type: "unknown", detail: "" }, capture_method: "front_selfie", framing: "chest_up", expression: { type: "neutral", mouth: "closed", detail: "" }, time_of_day: "unknown", image_style: { color: "color", detail: "" } },
+              createdAt: new Date().toISOString(),
+            } as ReferenceImage;
+          }
+          // Library refs — find by ID
+          return refs.find((r) => r.id === cr.id);
+        })
+        .filter(Boolean) as ReferenceImage[];
+      setSelectedRefs(stored);
+    } else if (post.selectedCharacterRefId) {
+      // Legacy single ref migration
+      const stored = refs.find((r) => r.id === post.selectedCharacterRefId);
+      setSelectedRefs(stored ? [stored] : []);
+    } else {
+      setSelectedRefs([]);
+    }
+    setRefLoading(false);
+  }, [open, post?.id, post?.selectedCharacterRefId, convexRefs]);
 
   // Auto-save caption/hashtags after 600ms
   useEffect(() => {
@@ -601,7 +616,31 @@ export function PostViewModal({
               <span className="flex-1">
                 {post.title || "Untitled Post"}
               </span>
-              <StatusBadge status={post.status} />
+              {/* Manual status selector for adhoc posts in draft/approved state */}
+              {!post.taskId && (post.status === "draft" || post.status === "approved") ? (
+                <Select
+                  value={post.status}
+                  onValueChange={(newStatus) => {
+                    const updated = {
+                      ...post,
+                      status: newStatus as "draft" | "approved",
+                      updatedAt: new Date().toISOString(),
+                    };
+                    savePost(updated);
+                    setPost(updated);
+                  }}
+                >
+                  <SelectTrigger className="w-32 h-8 border-zinc-700 bg-zinc-900 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <StatusBadge status={post.status} />
+              )}
             </DialogTitle>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <Badge className="bg-zinc-800 text-[10px] text-zinc-300 hover:bg-zinc-800">
@@ -699,17 +738,27 @@ export function PostViewModal({
                     )}
                   </div>
                   {canEdit && editingCaption ? (
-                    <Textarea
-                      value={post.caption}
-                      onChange={(e) => {
-                        const updated = { ...post, caption: e.target.value };
-                        setPost(updated);
-                        savePost(updated);
-                      }}
-                      onBlur={() => setEditingCaption(false)}
-                      autoFocus
-                      className="min-h-[80px] resize-y border-zinc-800 bg-zinc-900 text-sm text-zinc-200"
-                    />
+                    <div className="space-y-2">
+                      <Textarea
+                        value={post.caption}
+                        onChange={(e) => {
+                          const updated = { ...post, caption: e.target.value };
+                          setPost(updated);
+                          savePost(updated);
+                        }}
+                        onBlur={() => setEditingCaption(false)}
+                        autoFocus
+                        className="min-h-[80px] resize-y border-zinc-800 bg-zinc-900 text-sm text-zinc-200"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setCaptionHelperOpen(true)}
+                        className="flex items-center gap-1 rounded px-2 py-1 text-[10px] text-violet-400 transition-colors hover:bg-violet-950/30 hover:text-violet-300"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        AI Helper
+                      </button>
+                    </div>
                   ) : post.caption ? (
                     <p
                       className={`whitespace-pre-line text-sm leading-relaxed text-zinc-200 ${canEdit ? "cursor-pointer rounded px-1 -mx-1 transition-colors hover:bg-zinc-800/50" : ""}`}
@@ -1716,7 +1765,7 @@ export function PostViewModal({
       />
 
       {/* Prompt Helper Dialog */}
-      {promptHelperIndex !== null && (
+      {promptHelperIndex !== null && guides && (
         <PromptHelperDialog
           open={promptHelperOpen}
           onOpenChange={setPromptHelperOpen}
@@ -1727,20 +1776,24 @@ export function PostViewModal({
           onApplyPrompt={(prompt) => {
             handlePromptChange(promptHelperIndex, prompt);
           }}
+          promptStyle={guides.promptStyle}
         />
       )}
 
       {/* Caption Helper Dialog */}
-      <CaptionHelperDialog
-        open={captionHelperOpen}
-        onOpenChange={setCaptionHelperOpen}
-        currentCaption={caption}
-        imageUrls={selectedImages.map((i) => i.url)}
-        onApplyCaption={(newCaption) => {
-          setCaption(newCaption);
-          setCaptionDirty(true);
-        }}
-      />
+      {guides && (
+        <CaptionHelperDialog
+          open={captionHelperOpen}
+          onOpenChange={setCaptionHelperOpen}
+          currentCaption={caption}
+          imageUrls={selectedImages.map((i) => i.url)}
+          onApplyCaption={(newCaption) => {
+            setCaption(newCaption);
+            setCaptionDirty(true);
+          }}
+          captionStyle={guides.captionStyle}
+        />
+      )}
 
       {/* Image lightbox — rendered via portal outside Dialog */}
       {lightboxUrl &&

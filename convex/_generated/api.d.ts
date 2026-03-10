@@ -11,6 +11,7 @@
 import type * as admin from "../admin.js";
 import type * as ai_brainstorm from "../ai/brainstorm.js";
 import type * as ai_generate from "../ai/generate.js";
+import type * as aiGuides from "../aiGuides.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as generatedImages from "../generatedImages.js";
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   "ai/brainstorm": typeof ai_brainstorm;
   "ai/generate": typeof ai_generate;
+  aiGuides: typeof aiGuides;
   auth: typeof auth;
   crons: typeof crons;
   generatedImages: typeof generatedImages;

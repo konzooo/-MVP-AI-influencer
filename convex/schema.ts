@@ -199,6 +199,10 @@ export default defineSchema({
     aiSettings: v.optional(v.any()), // AI model preferences
     identity: v.optional(v.any()), // InfluencerIdentity
     costTracker: v.optional(v.any()), // Cost tracking data
+    aiGuides: v.optional(v.object({
+      captionStyle: v.string(),
+      promptStyle: v.string(),
+    })), // Caption and prompt style guides for AI helpers
   })
     .index("by_userId", ["userId"]),
 });

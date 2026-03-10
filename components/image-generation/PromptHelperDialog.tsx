@@ -20,6 +20,7 @@ interface PromptHelperDialogProps {
   currentPrompt: string;
   referenceImages: string[];
   onApplyPrompt: (prompt: string) => void;
+  promptStyle?: string;
 }
 
 export function PromptHelperDialog({
@@ -28,6 +29,7 @@ export function PromptHelperDialog({
   currentPrompt,
   referenceImages,
   onApplyPrompt,
+  promptStyle,
 }: PromptHelperDialogProps) {
   const [userInput, setUserInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -48,6 +50,7 @@ export function PromptHelperDialog({
           userInput,
           currentPrompt,
           referenceImages,
+          promptStyle,
         }),
       });
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const SYSTEM_PROMPT = `You are an expert at writing prompts for Seedream 4.5, an advanced image generation model that uses natural language prompts and reference images.
+function buildSystemPrompt(promptStyle?: string): string {
+  const basePrompt = `You are an expert at writing prompts for Seedream 4.5, an advanced image generation model that uses natural language prompts and reference images.
 
 Your job is to help users create or improve prompts based on their needs. You will receive:
 1. The user's natural language request (what they want to change/create)
@@ -46,6 +47,63 @@ Input: "Change to a beach at sunset"
 Current prompt: "Create a photo of the character from Figure 1 in a cozy living room, warm lamp light."
 Output: "Create a photo of the character from Figure 1 on a beach at golden hour, warm sunset glow, silhouette with rim lighting. Feet in the sand, waves in background, relaxed pose looking at the ocean. Professional photography, shallow depth of field, warm color grading."`;
 
+  if (promptStyle?.trim()) {
+    return `${basePrompt}
+
+Your job is to help users create or improve prompts based on their needs. You will receive:
+1. The user's natural language request (what they want to change/create)
+2. Their current prompt (if any)
+3. Reference images they're using
+
+STYLE GUIDE FOR PROMPTS YOU CREATE:
+${promptStyle}
+
+${SEEDREAM_RULES}
+
+${COMMON_USE_CASES}
+
+${OUTPUT_FORMAT}`;
+  }
+
+  return `${basePrompt}
+
+Your job is to help users create or improve prompts based on their needs. You will receive:
+1. The user's natural language request (what they want to change/create)
+2. Their current prompt (if any)
+3. Reference images they're using
+
+${SEEDREAM_RULES}
+
+${COMMON_USE_CASES}
+
+${OUTPUT_FORMAT}`;
+}
+
+const SEEDREAM_RULES = `CRITICAL SEEDREAM 4.5 PROMPT RULES:
+- Reference images are provided as "Figure 1", "Figure 2", etc. Always use these references in your prompts.
+- For character consistency, the prompt should reference "the character from Figure 1" (or whichever figure is the character reference).
+- DO NOT describe identity features like hair color, skin tone, or facial structure — the reference image handles that.
+- DO describe: pose, environment, composition, lighting, clothing, mood, camera angle, style.
+- Be specific about technical qualities: "professional photography", "soft natural light", "shallow depth of field", "35mm lens", etc.
+- Keep prompts concise but detailed — aim for 2-4 sentences.`;
+
+const COMMON_USE_CASES = `COMMON USE CASES:
+1. **Starting from scratch**: User has reference images but no prompt yet.
+   → Analyze the references and create a complete prompt.
+
+2. **Improving existing prompt**: User has a prompt but wants changes.
+   → Keep what works, modify what they asked for, maintain Seedream best practices.
+
+3. **Simple variations**: "Make her swimming", "Change to sunset", etc.
+   → Keep the core prompt structure, swap out the specific element.
+
+4. **Fixing issues**: "Make lighting more dramatic", "More relaxed pose", etc.
+   → Identify the relevant part of the prompt and enhance it.`;
+
+const OUTPUT_FORMAT = `OUTPUT FORMAT:
+Return ONLY the optimized prompt as plain text. No markdown, no explanations, no code blocks.
+Just the prompt string ready to be used with Seedream 4.5.`;
+
 interface PromptHelperRequest {
   userInput: string;
   currentPrompt: string;
@@ -70,8 +128,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = (await request.json()) as PromptHelperRequest;
-    const { userInput, currentPrompt, referenceImages } = body;
+    interface RequestBody extends PromptHelperRequest {
+      promptStyle?: string;
+    }
+    const body = (await request.json()) as RequestBody;
+    const { userInput, currentPrompt, referenceImages, promptStyle } = body;
 
     if (!userInput.trim()) {
       return NextResponse.json(
@@ -112,7 +173,7 @@ export async function POST(request: NextRequest) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           systemInstruction: {
-            parts: [{ text: SYSTEM_PROMPT }],
+            parts: [{ text: buildSystemPrompt(promptStyle) }],
           },
           contents: [{ parts }],
           generationConfig: {

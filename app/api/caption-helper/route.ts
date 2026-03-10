@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const SYSTEM_PROMPT = `You are a creative Instagram caption writer for an AI influencer.
+interface CaptionHelperRequest {
+  userRequest: string;
+  currentCaption: string;
+  imageUrls: string[];
+  captionStyle?: string;
+}
+
+function buildSystemPrompt(captionStyle?: string): string {
+  const baseGuidelines = `You are a creative Instagram caption writer for an AI influencer.
 
 You will receive:
 - One or more images (the post's selected photos)
@@ -9,14 +17,26 @@ You will receive:
 
 Your job is to write a new Instagram caption based on all of this context.
 
-Guidelines:
+Core guidelines:
 - Write in first person as the influencer
 - Match the mood and vibe of the images
+- Do NOT include hashtags — those are handled separately
+- Do NOT wrap the output in quotes or add any explanation — return ONLY the caption text itself`;
+
+  if (captionStyle?.trim()) {
+    return `${baseGuidelines}
+
+STYLE GUIDE FOR YOUR CAPTIONS:
+${captionStyle}`;
+  }
+
+  return `${baseGuidelines}
+
+Default guidelines:
 - Keep it authentic and conversational — not corporate or over-produced
 - Use natural line breaks (\\n) between thoughts
-- Do NOT include hashtags — those are handled separately
-- Length should match the request: if they ask for "minimal" keep it 1-2 lines; if they ask for "longer" or "storytelling" go up to 4-6 lines
-- Do NOT wrap the output in quotes or add any explanation — return ONLY the caption text itself`;
+- Length should match the request: if they ask for "minimal" keep it 1-2 lines; if they ask for "longer" or "storytelling" go up to 4-6 lines`;
+}
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -24,7 +44,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
   }
 
-  const { userRequest, currentCaption, imageUrls } = await request.json();
+  const { userRequest, currentCaption, imageUrls, captionStyle } = (await request.json()) as CaptionHelperRequest;
 
   if (!userRequest?.trim()) {
     return NextResponse.json({ error: "userRequest is required" }, { status: 400 });
@@ -67,7 +87,7 @@ Please write a new Instagram caption based on the image(s) and request above.`;
   }
 
   const geminiPayload = {
-    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    systemInstruction: { parts: [{ text: buildSystemPrompt(captionStyle) }] },
     contents: [{ role: "user", parts }],
     generationConfig: {
       temperature: 0.9,
