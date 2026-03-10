@@ -350,9 +350,29 @@ export function loadTransparency(): TransparencyData {
     const stored = localStorage.getItem("ai-influencer-transparency");
     if (!stored) return DEFAULT_TRANSPARENCY;
     const parsed = JSON.parse(stored);
-    // Ensure lastUpdated is always present (backfill for older stored configs)
-    if (!parsed.lastUpdated) parsed.lastUpdated = DEFAULT_TRANSPARENCY.lastUpdated;
-    return parsed;
+    // Deep-merge with defaults so any new fields added to DEFAULT_TRANSPARENCY
+    // are always present, even when the stored object predates them.
+    return {
+      ...DEFAULT_TRANSPARENCY,
+      ...parsed,
+      geminiPrompts: { ...DEFAULT_TRANSPARENCY.geminiPrompts, ...parsed.geminiPrompts },
+      geminiConfig: {
+        ...DEFAULT_TRANSPARENCY.geminiConfig,
+        ...parsed.geminiConfig,
+        temperature: { ...DEFAULT_TRANSPARENCY.geminiConfig.temperature, ...parsed.geminiConfig?.temperature },
+      },
+      falConfig: {
+        ...DEFAULT_TRANSPARENCY.falConfig,
+        ...parsed.falConfig,
+        parameters: { ...DEFAULT_TRANSPARENCY.falConfig.parameters, ...parsed.falConfig?.parameters },
+      },
+      instagramConfig: {
+        ...DEFAULT_TRANSPARENCY.instagramConfig,
+        ...parsed.instagramConfig,
+        limits: { ...DEFAULT_TRANSPARENCY.instagramConfig.limits, ...parsed.instagramConfig?.limits },
+      },
+      systemLimits: { ...DEFAULT_TRANSPARENCY.systemLimits, ...parsed.systemLimits },
+    };
   } catch {
     return DEFAULT_TRANSPARENCY;
   }
