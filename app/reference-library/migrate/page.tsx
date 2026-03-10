@@ -96,7 +96,7 @@ export default function MigratePage() {
           </Button>
         </div>
         <p className="mt-2 text-xs text-zinc-500">
-          Images resized to 1024px max (for generation) + 400px thumbnail (for grid). ~10× smaller than originals.
+          Both sets (Improved + Original). Images resized to 1024px JPEG q85. ~45× smaller than originals (~18 MB total vs 838 MB).
         </p>
 
         {log.length > 0 && (

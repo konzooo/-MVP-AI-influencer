@@ -15,11 +15,13 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import sharp from "sharp";
 
-const IMAGES_PATH = "/Users/kons/Documents/Side/Images/<alba_ai0>/Improved Set";
+// Both image sets to migrate
+const IMAGE_DIRS = [
+  "/Users/kons/Documents/Side/Images/<alba_ai0>/Improved Set",
+  "/Users/kons/Documents/Side/Images/<alba_ai0>/Original Training Data set",
+];
 
-// Max dimensions for the main image (used as FAL reference) and thumbnail (grid UI)
 const FULL_MAX_PX = 1024;
-const THUMB_MAX_PX = 400;
 const JPEG_QUALITY = 85;
 const CONVEX_URL = process.env.NEXT_PUBLIC_CONVEX_URL!;
 
@@ -59,9 +61,9 @@ function parseMetadataFile(content: string) {
   return { summary, tags, metadata };
 }
 
-async function resizeImage(buffer: Buffer, maxPx: number): Promise<Buffer> {
+async function resizeImage(buffer: Buffer): Promise<Buffer> {
   return sharp(buffer)
-    .resize(maxPx, maxPx, { fit: "inside", withoutEnlargement: true })
+    .resize(FULL_MAX_PX, FULL_MAX_PX, { fit: "inside", withoutEnlargement: true })
     .jpeg({ quality: JPEG_QUALITY })
     .toBuffer();
 }
@@ -101,9 +103,6 @@ export async function POST(request: NextRequest) {
   const results: { file: string; status: "ok" | "skip" | "error"; message?: string }[] = [];
 
   try {
-    const files = await readdir(IMAGES_PATH);
-    const imageFiles = files.filter((f) => f.match(/\.(png|jpg|jpeg)$/i)).sort();
-
     // Check what's already in Convex
     const existingRefs = await client.query(api.referenceImages.list);
 
@@ -119,67 +118,55 @@ export async function POST(request: NextRequest) {
       ? new Set<string>()
       : new Set(existingRefs.map((r: any) => r.filename));
 
-    for (const imageFile of imageFiles) {
-      if (existingFilenames.has(imageFile)) {
-        results.push({ file: imageFile, status: "skip", message: "Already exists" });
-        continue;
-      }
+    // Process both directories
+    for (const dir of IMAGE_DIRS) {
+      const files = await readdir(dir);
+      const imageFiles = files.filter((f) => f.match(/\.(png|jpg|jpeg)$/i)).sort();
 
-      const baseName = imageFile.replace(/\.(png|jpg|jpeg)$/i, "");
-      const txtFile = `${baseName}.txt`;
+      for (const imageFile of imageFiles) {
+        if (existingFilenames.has(imageFile)) {
+          results.push({ file: imageFile, status: "skip", message: "Already exists" });
+          continue;
+        }
 
-      if (!files.includes(txtFile)) {
-        results.push({ file: imageFile, status: "skip", message: "No metadata file" });
-        continue;
-      }
+        const baseName = imageFile.replace(/\.(png|jpg|jpeg)$/i, "");
+        const txtFile = `${baseName}.txt`;
 
-      try {
-        // Read image
-        const rawBuffer = await readFile(join(IMAGES_PATH, imageFile));
+        if (!files.includes(txtFile)) {
+          results.push({ file: imageFile, status: "skip", message: "No metadata file" });
+          continue;
+        }
 
-        // Read & parse metadata
-        const txtContent = await readFile(join(IMAGES_PATH, txtFile), "utf-8");
-        const { summary, tags, metadata } = parseMetadataFile(txtContent);
+        try {
+          const rawBuffer = await readFile(join(dir, imageFile));
+          const txtContent = await readFile(join(dir, txtFile), "utf-8");
+          const { summary, tags, metadata } = parseMetadataFile(txtContent);
 
-        // Resize to full (1024px, for FAL) and thumbnail (400px, for grid)
-        const [fullBuffer, thumbBuffer] = await Promise.all([
-          resizeImage(rawBuffer, FULL_MAX_PX),
-          resizeImage(rawBuffer, THUMB_MAX_PX),
-        ]);
+          const compressed = await resizeImage(rawBuffer);
+          const uploadUrl = await client.mutation(api.referenceImages.generateUploadUrl);
+          const storageId = await uploadBuffer(uploadUrl, compressed);
 
-        // Upload both to Convex storage
-        const [fullUploadUrl, thumbUploadUrl] = await Promise.all([
-          client.mutation(api.referenceImages.generateUploadUrl),
-          client.mutation(api.referenceImages.generateUploadUrl),
-        ]);
+          await client.mutation(api.referenceImages.create, {
+            filename: imageFile,
+            storageId: storageId as Id<"_storage">,
+            summary,
+            tags,
+            metadata,
+          });
 
-        const [storageId, thumbnailStorageId] = await Promise.all([
-          uploadBuffer(fullUploadUrl, fullBuffer),
-          uploadBuffer(thumbUploadUrl, thumbBuffer),
-        ]);
-
-        // Create DB record
-        await client.mutation(api.referenceImages.create, {
-          filename: imageFile,
-          storageId: storageId as Id<"_storage">,
-          thumbnailStorageId: thumbnailStorageId as Id<"_storage">,
-          summary,
-          tags,
-          metadata,
-        });
-
-        results.push({ file: imageFile, status: "ok" });
-      } catch (err) {
-        results.push({
-          file: imageFile,
-          status: "error",
-          message: err instanceof Error ? err.message : "Unknown error",
-        });
+          results.push({ file: imageFile, status: "ok" });
+        } catch (err) {
+          results.push({
+            file: imageFile,
+            status: "error",
+            message: err instanceof Error ? err.message : "Unknown error",
+          });
+        }
       }
     }
   } catch (err) {
     return NextResponse.json(
-      { error: `Failed to read images directory: ${err instanceof Error ? err.message : "unknown"}` },
+      { error: `Migration failed: ${err instanceof Error ? err.message : "unknown"}` },
       { status: 500 }
     );
   }
