@@ -52,7 +52,7 @@ export async function PUT(
       try {
         const client = new ConvexHttpClient(convexUrl);
         const filenameNoExt = basename(filename, extname(filename));
-        const imageId = `ref-${LEGACY_SOURCE_KEY}-${filenameNoExt}`;
+        const imageId = `ref-${filenameNoExt}`;
         await client.mutation(api.referenceImages.updateMetadata, {
           imageId,
           summary: data.summary,

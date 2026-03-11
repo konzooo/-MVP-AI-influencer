@@ -1193,9 +1193,10 @@ export function PostViewModal({
                                 <div
                                   key={ref.id}
                                   className="group/ref relative cursor-pointer"
-                                  onClick={() =>
-                                    setLightboxUrl(getReferencePreviewPath(ref))
-                                  }
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setLightboxUrl(getReferencePreviewPath(ref));
+                                  }}
                                 >
                                   <img
                                     src={ref.thumbnailPath || getReferencePreviewPath(ref)}

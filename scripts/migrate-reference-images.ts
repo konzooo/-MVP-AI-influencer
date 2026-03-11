@@ -13,14 +13,14 @@ import sharp from "sharp";
 import { ConvexHttpClient } from "convex/browser";
 
 const REFERENCE_LIBRARY_ROOT = "/Users/kons/Documents/Side/Images/<alba_ai0>";
-const COMPRESSED_IMAGES_DIR = "/Users/kons/Documents/Side/Images/compressed_images";
+const COMPRESSED_IMAGES_DIR = "/Users/kons/Documents/Side/Images/<alba_ai0>/compressed images";
 
+// Both folders are the same reference set — local folder split is just for organization
 const SOURCES = [
   {
-    key: "original",
     path: join(REFERENCE_LIBRARY_ROOT, "Original Training Data set"),
   },
-  { key: "improved", path: join(REFERENCE_LIBRARY_ROOT, "Improved Set") },
+  { path: join(REFERENCE_LIBRARY_ROOT, "Improved Set") },
 ];
 
 const MAIN_IMAGE_MAX_WIDTH = 1080;
@@ -115,7 +115,7 @@ async function migrationReferenceImages() {
   let totalMigrated = 0;
 
   for (const source of SOURCES) {
-    console.log(`\n📁 Processing source: ${source.key}`);
+    console.log(`\n📁 Processing: ${source.path}`);
 
     let files: string[] = [];
     try {
@@ -143,7 +143,7 @@ async function migrationReferenceImages() {
 
         // Read metadata
         let summary = filename;
-        let tags: string[] = [source.key];
+        let tags: string[] = ["reference"];
         let metadata: Partial<ReferenceImageMetadata> = {
           schema_version: "1.0",
           indoor_outdoor: "unknown",
@@ -207,10 +207,10 @@ async function migrationReferenceImages() {
         );
 
         // Save to Convex DB
-        const imageId = `ref-${source.key}-${basename_noext}`;
+        const imageId = `ref-${basename_noext}`;
         await client.mutation("referenceImages:add" as any, {
           imageId,
-          sourceKey: source.key,
+          sourceKey: "reference",
           filename,
           storageId: mainStorageId,
           thumbnailStorageId: thumbStorageId,
