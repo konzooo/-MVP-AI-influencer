@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "@/convex/_generated/api";
 import {
   isReferenceLibrarySourceKey,
   readReferenceImageAsset,
   updateReferenceImageMetadata,
 } from "@/lib/reference-image-library";
+import { extname, basename } from "path";
 
 export async function GET(
   request: NextRequest,
@@ -66,12 +69,29 @@ export async function PUT(
     }
 
     const data = await request.json();
-    await updateReferenceImageMetadata(sourceKey, filename, data);
 
-    return NextResponse.json({
-      success: true,
-      message: "Image metadata updated successfully",
-    });
+    // Try Convex first
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+    if (convexUrl) {
+      try {
+        const client = new ConvexHttpClient(convexUrl);
+        const filenameNoExt = basename(filename, extname(filename));
+        const imageId = `ref-${sourceKey}-${filenameNoExt}`;
+        await client.mutation(api.referenceImages.updateMetadata, {
+          imageId,
+          summary: data.summary,
+          tags: data.tags,
+          metadata: JSON.stringify(data.metadata),
+        });
+        return NextResponse.json({ success: true, message: "Image metadata updated successfully" });
+      } catch (convexError) {
+        console.warn("[PUT /api/reference-images/source] Convex update failed, falling back to filesystem:", convexError);
+      }
+    }
+
+    // Fallback: filesystem
+    await updateReferenceImageMetadata(sourceKey, filename, data);
+    return NextResponse.json({ success: true, message: "Image metadata updated successfully" });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to update image metadata";
