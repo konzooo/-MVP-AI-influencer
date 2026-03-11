@@ -1,3 +1,6 @@
+import { getConvexClient } from "./convex-client";
+import { api } from "@/convex/_generated/api";
+
 const COST_LOG_KEY = "ai-influencer-cost-log";
 const COST_SETTINGS_KEY = "ai-influencer-cost-settings";
 const LLM_LOG_KEY = "ai-influencer-llm-log";
@@ -84,8 +87,11 @@ function saveLog(entries: CostEntry[]): void {
   localStorage.setItem(COST_LOG_KEY, JSON.stringify(entries));
 }
 
-/** Record a generation call. Prunes entries older than 30 days. */
+/** Record a generation call. Prunes entries older than 30 days. Also writes to Convex. */
 export function recordGeneration(cost: number = COST_PER_GENERATION): void {
+  const timestamp = new Date().toISOString();
+
+  // localStorage (synchronous, for fast reads)
   const entries = loadLog();
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -96,12 +102,24 @@ export function recordGeneration(cost: number = COST_PER_GENERATION): void {
 
   pruned.push({
     id: crypto.randomUUID(),
-    timestamp: new Date().toISOString(),
+    timestamp,
     cost,
     type: "generation",
   });
 
   saveLog(pruned);
+
+  // Convex (fire-and-forget, for persistence)
+  try {
+    const client = getConvexClient();
+    client.mutation(api.costLog.record, {
+      entryType: "generation",
+      timestamp,
+      cost,
+    });
+  } catch {
+    // Silently ignore — localStorage is the primary source for now
+  }
 }
 
 /** Sum of costs for today (local timezone). */
@@ -211,13 +229,17 @@ function getEntriesForCurrentDay<T extends { timestamp: string }>(
   );
 }
 
-/** Record an LLM API call. Prunes entries older than 30 days. */
+/** Record an LLM API call. Prunes entries older than 30 days. Also writes to Convex. */
 export function recordLLMCall(
   provider: LLMProvider,
   callType: LLMCallType,
   cost: number = 0,
   usage?: LLMUsageMetadata
 ): void {
+  const timestamp = new Date().toISOString();
+  const safeCost = Number.isFinite(cost) ? cost : 0;
+
+  // localStorage (synchronous, for fast reads)
   const entries = loadLLMLog();
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -228,16 +250,33 @@ export function recordLLMCall(
 
   pruned.push({
     id: crypto.randomUUID(),
-    timestamp: new Date().toISOString(),
+    timestamp,
     provider,
     callType,
-    cost: Number.isFinite(cost) ? cost : 0,
+    cost: safeCost,
     inputTokens: usage?.inputTokens,
     outputTokens: usage?.outputTokens,
     model: usage?.model,
   });
 
   saveLLMLog(pruned);
+
+  // Convex (fire-and-forget, for persistence)
+  try {
+    const client = getConvexClient();
+    client.mutation(api.costLog.record, {
+      entryType: "llm",
+      timestamp,
+      cost: safeCost,
+      provider,
+      callType,
+      inputTokens: usage?.inputTokens,
+      outputTokens: usage?.outputTokens,
+      model: usage?.model,
+    });
+  } catch {
+    // Silently ignore
+  }
 }
 
 export function getLLMUsageFromHeaders(headers: Headers): LLMUsageMetadata & { cost: number } {

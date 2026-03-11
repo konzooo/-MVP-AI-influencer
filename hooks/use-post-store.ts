@@ -1,24 +1,40 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useMemo } from "react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { PostPlan } from "@/lib/types";
-import { loadPosts, savePost, deletePost as deletePostFromStore } from "@/lib/store";
-import { POSTS_UPDATED_EVENT } from "@/lib/post-events";
+import { updatePostsCache } from "@/lib/store";
 
 export function usePostStore() {
-  const [posts, setPosts] = useState<PostPlan[]>([]);
+  const rawPosts = useQuery(api.posts.list);
+  const saveMutation = useMutation(api.posts.save);
+  const removeMutation = useMutation(api.posts.remove);
 
-  const refresh = useCallback(() => {
-    setPosts(loadPosts());
-  }, []);
+  // Parse and sort posts from Convex
+  const posts: PostPlan[] = useMemo(() => {
+    if (!rawPosts) return [];
+    return rawPosts
+      .map((row: { data: string }) => {
+        try {
+          return JSON.parse(row.data) as PostPlan;
+        } catch {
+          return null;
+        }
+      })
+      .filter((p: PostPlan | null): p is PostPlan => p !== null)
+      .sort(
+        (a: PostPlan, b: PostPlan) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
+  }, [rawPosts]);
 
-  // Load on mount + listen for updates from any source
+  // Keep localStorage cache in sync for lib/ code that reads synchronously
   useEffect(() => {
-    refresh();
-    const handler = () => refresh();
-    window.addEventListener(POSTS_UPDATED_EVENT, handler);
-    return () => window.removeEventListener(POSTS_UPDATED_EVENT, handler);
-  }, [refresh]);
+    if (rawPosts !== undefined) {
+      updatePostsCache(posts);
+    }
+  }, [posts, rawPosts]);
 
   const getPost = useCallback(
     (id: string): PostPlan | undefined => {
@@ -27,17 +43,27 @@ export function usePostStore() {
     [posts]
   );
 
-  const updatePost = useCallback((post: PostPlan) => {
-    savePost(post); // dispatches POSTS_UPDATED_EVENT internally
-  }, []);
+  const updatePost = useCallback(
+    (post: PostPlan) => {
+      const updated = { ...post, updatedAt: new Date().toISOString() };
+      saveMutation({
+        postId: updated.id,
+        data: JSON.stringify(updated),
+      });
+    },
+    [saveMutation]
+  );
 
-  const deletePost = useCallback((id: string) => {
-    deletePostFromStore(id); // dispatches POSTS_UPDATED_EVENT internally
-  }, []);
+  const deletePost = useCallback(
+    (id: string) => {
+      removeMutation({ postId: id });
+    },
+    [removeMutation]
+  );
 
   return {
     posts,
-    refresh,
+    isLoading: rawPosts === undefined,
     getPost,
     updatePost,
     deletePost,

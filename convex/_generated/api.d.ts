@@ -8,6 +8,10 @@
  * @module
  */
 
+import type * as costLog from "../costLog.js";
+import type * as generatedImages from "../generatedImages.js";
+import type * as imageStorage from "../imageStorage.js";
+import type * as posts from "../posts.js";
 import type * as settings from "../settings.js";
 
 import type {
@@ -17,6 +21,10 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  costLog: typeof costLog;
+  generatedImages: typeof generatedImages;
+  imageStorage: typeof imageStorage;
+  posts: typeof posts;
   settings: typeof settings;
 }>;
 
