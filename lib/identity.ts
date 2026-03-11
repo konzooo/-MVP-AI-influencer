@@ -218,7 +218,7 @@ export const DEFAULT_IDENTITY: InfluencerIdentity = {
 };
 
 /**
- * Load identity from localStorage
+ * Load identity from localStorage (sync, client-side only).
  */
 export function loadIdentity(): InfluencerIdentity {
   try {
@@ -226,6 +226,23 @@ export function loadIdentity(): InfluencerIdentity {
     const stored = localStorage.getItem("ai-influencer-identity");
     if (!stored) return DEFAULT_IDENTITY;
     return { ...DEFAULT_IDENTITY, ...JSON.parse(stored) };
+  } catch {
+    return DEFAULT_IDENTITY;
+  }
+}
+
+/**
+ * Load identity from Convex (async, works server-side).
+ * Used by API routes and task runner when localStorage is unavailable.
+ */
+export async function loadIdentityAsync(): Promise<InfluencerIdentity> {
+  try {
+    const { getConvexClient } = await import("./convex-client");
+    const { api } = await import("@/convex/_generated/api");
+    const client = getConvexClient();
+    const raw = await client.query(api.settings.get, { key: "identity" });
+    if (!raw) return DEFAULT_IDENTITY;
+    return { ...DEFAULT_IDENTITY, ...JSON.parse(raw) };
   } catch {
     return DEFAULT_IDENTITY;
   }

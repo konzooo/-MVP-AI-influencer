@@ -9,11 +9,15 @@
  */
 
 import type * as costLog from "../costLog.js";
+import type * as crons from "../crons.js";
 import type * as generatedImages from "../generatedImages.js";
 import type * as imageStorage from "../imageStorage.js";
+import type * as instagramAuth from "../instagramAuth.js";
 import type * as posts from "../posts.js";
 import type * as referenceImages from "../referenceImages.js";
 import type * as settings from "../settings.js";
+import type * as taskRunner from "../taskRunner.js";
+import type * as tasks from "../tasks.js";
 
 import type {
   ApiFromModules,
@@ -23,11 +27,15 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   costLog: typeof costLog;
+  crons: typeof crons;
   generatedImages: typeof generatedImages;
   imageStorage: typeof imageStorage;
+  instagramAuth: typeof instagramAuth;
   posts: typeof posts;
   referenceImages: typeof referenceImages;
   settings: typeof settings;
+  taskRunner: typeof taskRunner;
+  tasks: typeof tasks;
 }>;
 
 /**

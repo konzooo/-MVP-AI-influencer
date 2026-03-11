@@ -85,6 +85,23 @@ export function loadAISettings(): AISettings {
   }
 }
 
+/**
+ * Load AI settings from Convex (async, works server-side).
+ * Used by API routes and task runner when localStorage is unavailable.
+ */
+export async function loadAISettingsAsync(): Promise<AISettings> {
+  try {
+    const { getConvexClient } = await import("./convex-client");
+    const { api } = await import("@/convex/_generated/api");
+    const client = getConvexClient();
+    const raw = await client.query(api.settings.get, { key: "aiSettings" });
+    if (!raw) return DEFAULT_SETTINGS;
+    return sanitizeAISettings(JSON.parse(raw));
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
 export function saveAISettings(settings: AISettings): void {
   if (typeof window === "undefined") return;
   try {

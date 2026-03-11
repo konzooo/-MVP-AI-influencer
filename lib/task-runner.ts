@@ -1,5 +1,3 @@
-"use client";
-
 import {
   Task,
   InspirationItem,
@@ -12,7 +10,8 @@ import {
 } from "./types";
 import { savePost as savePostState } from "./store";
 import { loadIdentity } from "./identity";
-import { saveTask, computeNextRunAt } from "./task-store";
+import { loadIdentityAsync } from "./identity";
+import { saveTask, saveTaskAsync, computeNextRunAt } from "./task-store";
 import {
   selectCharacterReference,
   buildContextFromStyleMode,
@@ -22,7 +21,29 @@ import { checkDailyLimit, getLLMUsageFromHeaders, recordGeneration, recordLLMCal
 import { canPublish, recordPublish } from "./instagram-rate-limit";
 import { ReferenceImage } from "./types";
 import { loadAISettings } from "./ai-settings";
+import { loadAISettingsAsync } from "./ai-settings";
 import { saveGeneratedImagesToLibrary } from "./generated-image-library";
+
+const isServer = typeof window === "undefined";
+
+/** Load identity from Convex (server) or localStorage (client) */
+async function resolveIdentity() {
+  return isServer ? loadIdentityAsync() : loadIdentity();
+}
+
+/** Load AI settings from Convex (server) or localStorage (client) */
+async function resolveAISettings() {
+  return isServer ? loadAISettingsAsync() : loadAISettings();
+}
+
+/** Save task to Convex (async on server, fire-and-forget on client) */
+async function resolveTaskSave(task: Task) {
+  if (isServer) {
+    await saveTaskAsync(task);
+  } else {
+    saveTask(task);
+  }
+}
 
 interface ExecutionLog {
   lines: string[];
@@ -405,7 +426,7 @@ export async function runTask(
       if (!selectedItem) {
         // Queue empty — synthesize from_scratch item using task's fallback config
         log.add(`Queue empty, synthesizing from_scratch fallback item`);
-        selectedItem = synthesizeFromScratchItem(task);
+        selectedItem = await synthesizeFromScratchItem(task);
         result.wasFallback = true;
       }
     }
@@ -417,11 +438,11 @@ export async function runTask(
 
     let post: PostPlan;
 
-    const identity = loadIdentity();
+    const identity = await resolveIdentity();
     const personaContext = identity.isActive
       ? (await import("./identity")).buildPersonaContext(identity)
       : undefined;
-    const aiSettings = loadAISettings();
+    const aiSettings = await resolveAISettings();
 
     if (selectedItem.type === "own_image") {
       if (selectedItem.postType === "carousel") {
@@ -642,12 +663,12 @@ export async function runTask(
     if (task.approvalMode === "manual") {
       log.add(`Manual approval mode: saving post at ${post.status}, stopping`);
       savePostState(post);
-      markItemUsed(task, selectedItem.id);
+      await markItemUsed(task, selectedItem.id);
 
       // Always advance nextRunAt so the scheduler doesn't re-fire every 60s
       task.lastRunAt = new Date().toISOString();
       task.nextRunAt = computeNextRunAt(task);
-      saveTask(task);
+      await resolveTaskSave(task);
       log.add(`Next run scheduled: ${task.nextRunAt}`);
 
       result.success = true;
@@ -748,12 +769,12 @@ export async function runTask(
     // ─── Step 8: Finalize ─────────────────────────────────────────────────────
 
     savePostState(post);
-    markItemUsed(task, selectedItem.id);
+    await markItemUsed(task, selectedItem.id);
 
     // Update task timestamps
     task.lastRunAt = new Date().toISOString();
     task.nextRunAt = computeNextRunAt(task);
-    saveTask(task);
+    await resolveTaskSave(task);
 
     log.add(`Task run complete`);
     result.success = true;
@@ -769,8 +790,8 @@ export async function runTask(
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-function synthesizeFromScratchItem(task: Task): FromScratchInspirationItem {
-  const identity = loadIdentity();
+async function synthesizeFromScratchItem(task: Task): Promise<FromScratchInspirationItem> {
+  const identity = await resolveIdentity();
 
   // Pick style mode randomly from identity
   const styleMode =
@@ -835,11 +856,11 @@ function buildFromScratchIdea(
   return idea;
 }
 
-function markItemUsed(task: Task, itemId: string): void {
+async function markItemUsed(task: Task, itemId: string): Promise<void> {
   const item = task.inspirationItems.find((i) => i.id === itemId);
   if (item) {
     item.status = "used";
     item.usedAt = new Date().toISOString();
-    saveTask(task);
+    await resolveTaskSave(task);
   }
 }

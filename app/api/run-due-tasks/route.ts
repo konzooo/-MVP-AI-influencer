@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { getDueTasks, saveTask, computeNextRunAt } from "@/lib/task-store";
+import { getDueTasksAsync, saveTaskAsync, computeNextRunAt } from "@/lib/task-store";
 
 /**
  * POST /api/run-due-tasks
  *
- * External cron endpoint — triggers all tasks whose nextRunAt is in the past.
- * Call this from a cron service (e.g. cron-job.org, Vercel Cron) every minute.
+ * Cron endpoint — triggers all tasks whose nextRunAt is in the past.
+ * Called by Convex cron (every minute) or manually.
  *
  * Optional header: Authorization: Bearer <CRON_SECRET>
  * Set CRON_SECRET env var to protect the endpoint.
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const dueTasks = getDueTasks();
+  const dueTasks = await getDueTasksAsync();
 
   if (dueTasks.length === 0) {
     return NextResponse.json({ ran: 0, results: [] });
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
 
   for (const task of dueTasks) {
     try {
-      // Dynamically import to avoid edge-runtime issues with localStorage mocks
+      // Dynamically import to avoid edge-runtime issues
       const { runTask } = await import("@/lib/task-runner");
       const result = await runTask(task);
 
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
         nextRunAt: computeNextRunAt(task),
         updatedAt: new Date().toISOString(),
       };
-      saveTask(updated);
+      await saveTaskAsync(updated);
 
       results.push({
         taskId: task.id,

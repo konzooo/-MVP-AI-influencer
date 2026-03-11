@@ -2,13 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { TaskFormInline } from "@/components/automated-tasks/TaskFormInline";
-import { saveTask } from "@/lib/task-store";
+import { useTaskStore } from "@/hooks/use-task-store";
 import { Task } from "@/lib/task-types";
-import { dispatchTasksUpdated } from "@/lib/task-events";
 import { toast } from "sonner";
 
 export default function NewTaskPage() {
   const router = useRouter();
+  const { updateTask } = useTaskStore();
 
   const handleCreate = (
     fields: Omit<Task, "id" | "createdAt" | "updatedAt" | "lastRunAt" | "nextRunAt" | "inspirationItems">
@@ -23,8 +23,7 @@ export default function NewTaskPage() {
       lastRunAt: null,
       nextRunAt: null,
     };
-    saveTask(newTask);
-    dispatchTasksUpdated();
+    updateTask(newTask);
     toast.success(`Task "${newTask.name}" created`);
     router.push(`/automated-tasks/${newTask.id}`);
   };

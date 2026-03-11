@@ -1,5 +1,5 @@
-import { readFile, writeFile, unlink, access } from "fs/promises";
-import { join } from "path";
+import { getConvexClient } from "./convex-client";
+import { api } from "@/convex/_generated/api";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -36,7 +36,6 @@ export interface PublishResult {
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const AUTH_FILE = join(process.cwd(), ".instagram-auth.json");
 const GRAPH_API_VERSION = "v21.0";
 const GRAPH_API_BASE = `https://graph.instagram.com/${GRAPH_API_VERSION}`;
 const CONTAINER_POLL_INTERVAL_MS = 2000;
@@ -47,23 +46,38 @@ const MAX_IMAGE_SIZE_BYTES = 7.5 * 1024 * 1024; // 7.5MB (under IG's 8MB limit)
 
 export async function loadAuth(): Promise<InstagramAuth | null> {
   try {
-    await access(AUTH_FILE);
-    const raw = await readFile(AUTH_FILE, "utf-8");
-    return JSON.parse(raw) as InstagramAuth;
-  } catch {
+    const client = getConvexClient();
+    const row = await client.query(api.instagramAuth.get);
+    return row as InstagramAuth | null;
+  } catch (error) {
+    console.error("[Instagram] Failed to load auth from Convex:", error);
     return null;
   }
 }
 
 export async function saveAuth(auth: InstagramAuth): Promise<void> {
-  await writeFile(AUTH_FILE, JSON.stringify(auth, null, 2), { mode: 0o600 });
+  try {
+    const client = getConvexClient();
+    await client.mutation(api.instagramAuth.save, {
+      accessToken: auth.accessToken,
+      tokenExpiresAt: auth.tokenExpiresAt,
+      igUserId: auth.igUserId,
+      username: auth.username,
+      profilePictureUrl: auth.profilePictureUrl,
+      connectedAt: auth.connectedAt,
+    });
+  } catch (error) {
+    console.error("[Instagram] Failed to save auth to Convex:", error);
+    throw error;
+  }
 }
 
 export async function deleteAuth(): Promise<void> {
   try {
-    await unlink(AUTH_FILE);
-  } catch {
-    // File doesn't exist, that's fine
+    const client = getConvexClient();
+    await client.mutation(api.instagramAuth.remove);
+  } catch (error) {
+    console.error("[Instagram] Failed to delete auth from Convex:", error);
   }
 }
 

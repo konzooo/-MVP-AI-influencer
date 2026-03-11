@@ -1,16 +1,15 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Plus, Play, Pause, RotateCcw, Pencil, Trash2 } from "lucide-react";
-import { getTaskById, saveTask, deleteTask } from "@/lib/task-store";
-import { loadPosts, deletePost } from "@/lib/store";
+import { useTaskStore } from "@/hooks/use-task-store";
+import { usePostStore } from "@/hooks/use-post-store";
 import { Task, InspirationItem } from "@/lib/task-types";
 import { runTask } from "@/lib/task-runner";
-import { dispatchTasksUpdated } from "@/lib/task-events";
 import { TaskFormInline } from "@/components/automated-tasks/TaskFormInline";
 import { AddItemDialog } from "@/components/automated-tasks/AddItemDialog";
 import { InspirationQueue } from "@/components/automated-tasks/InspirationQueue";
@@ -23,7 +22,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const router = useRouter();
 
-  const [task, setTask] = useState<Task | null>(null);
+  const { getTask, updateTask, deleteTask: removeTask } = useTaskStore();
+  const { posts, deletePost } = usePostStore();
+
   const [isEditing, setIsEditing] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
   const [runStatus, setRunStatus] = useState<RunStatus>("idle");
@@ -31,19 +32,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [modalPostId, setModalPostId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  const refresh = () => {
-    const t = getTaskById(id);
-    if (!t) {
-      router.replace("/automated-tasks");
-      return;
-    }
-    setTask(t);
-  };
-
-  useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  const task = getTask(id);
 
   if (!task) {
     return (
@@ -53,7 +42,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     );
   }
 
-  const taskPosts = loadPosts().filter((p) => p.taskId === task.id);
+  const taskPosts = posts.filter((p) => p.taskId === task.id);
 
   // ─── Task CRUD ──────────────────────────────────────────────────────────────
 
@@ -61,17 +50,14 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     fields: Omit<Task, "id" | "createdAt" | "updatedAt" | "lastRunAt" | "nextRunAt" | "inspirationItems">
   ) => {
     const updated: Task = { ...task, ...fields, updatedAt: new Date().toISOString() };
-    saveTask(updated);
-    setTask(updated);
+    updateTask(updated);
     setIsEditing(false);
-    dispatchTasksUpdated();
     toast.success("Task updated");
   };
 
   const handleDeleteTask = () => {
     if (!window.confirm("Are you sure you want to delete this task? This cannot be undone.")) return;
-    deleteTask(task.id);
-    dispatchTasksUpdated();
+    removeTask(task.id);
     toast.success("Task deleted");
     router.push("/automated-tasks");
   };
@@ -84,14 +70,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       inspirationItems: [...task.inspirationItems, item],
       updatedAt: new Date().toISOString(),
     };
-    saveTask(updated);
-    setTask(updated);
+    updateTask(updated);
   };
 
   const handleReorderItems = (items: InspirationItem[]) => {
     const updated: Task = { ...task, inspirationItems: items, updatedAt: new Date().toISOString() };
-    saveTask(updated);
-    setTask(updated);
+    updateTask(updated);
   };
 
   const handleDeleteItem = (itemId: string) => {
@@ -100,8 +84,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       inspirationItems: task.inspirationItems.filter((i) => i.id !== itemId),
       updatedAt: new Date().toISOString(),
     };
-    saveTask(updated);
-    setTask(updated);
+    updateTask(updated);
   };
 
   // ─── Scheduler controls ──────────────────────────────────────────────────────
@@ -128,9 +111,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       nextRunAt: firstNext.toISOString(),
       updatedAt: now.toISOString(),
     };
-    saveTask(updated);
-    setTask(updated);
-    dispatchTasksUpdated();
+    updateTask(updated);
     toast.success(`Scheduler started — runs every ${task.cadence.every} ${task.cadence.unit} at ${scheduledTime}`);
 
     // Run the first generation immediately
@@ -144,9 +125,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       nextRunAt: null,
       updatedAt: new Date().toISOString(),
     };
-    saveTask(updated);
-    setTask(updated);
-    dispatchTasksUpdated();
+    updateTask(updated);
     toast.success("Scheduler paused");
   };
 
@@ -170,9 +149,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       nextRunAt: next.toISOString(),
       updatedAt: now.toISOString(),
     };
-    saveTask(updated);
-    setTask(updated);
-    dispatchTasksUpdated();
+    updateTask(updated);
     toast.success(`Scheduler resumed — next run ${next.toLocaleString()}`);
   };
 
@@ -185,8 +162,6 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
     setRunLog(result.log);
     setRunStatus(result.success ? "done" : "error");
-    refresh();
-    dispatchTasksUpdated();
 
     if (result.success) {
       toast.success(
@@ -202,7 +177,6 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const handleDeletePost = (postId: string) => {
     deletePost(postId);
     setDeleteConfirmId(null);
-    refresh();
     toast.success("Post deleted");
   };
 
@@ -426,7 +400,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                     {deleteConfirmId === post.id ? (
                       /* ── Inline delete confirmation ── */
                       <div className="flex items-center justify-between rounded border border-red-800/50 bg-red-950/20 px-3 py-2">
-                        <p className="text-sm text-red-300">Delete "{post.title || "untitled"}"?</p>
+                        <p className="text-sm text-red-300">Delete &quot;{post.title || "untitled"}&quot;?</p>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleDeletePost(post.id)}

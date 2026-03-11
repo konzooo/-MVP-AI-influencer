@@ -1,5 +1,3 @@
-"use client";
-
 import { ConvexHttpClient } from "convex/browser";
 
 let client: ConvexHttpClient | null = null;

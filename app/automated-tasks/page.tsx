@@ -1,24 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Plus, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { loadTasks } from "@/lib/task-store";
-import { Task } from "@/lib/task-types";
-import { TASKS_UPDATED_EVENT } from "@/lib/task-events";
+import { useTaskStore } from "@/hooks/use-task-store";
 import { TaskCard } from "@/components/automated-tasks/TaskCard";
 
 export default function AutomatedTasksPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-
-  useEffect(() => {
-    setTasks(loadTasks());
-    const handler = () => setTasks(loadTasks());
-    window.addEventListener(TASKS_UPDATED_EVENT, handler);
-    return () => window.removeEventListener(TASKS_UPDATED_EVENT, handler);
-  }, []);
+  const { tasks } = useTaskStore();
 
   return (
     <div className="mx-auto max-w-4xl p-6">

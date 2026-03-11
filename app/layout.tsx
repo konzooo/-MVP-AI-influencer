@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { ConvexClientProvider } from "@/components/providers/ConvexClientProvider";
 import { SettingsMigration } from "@/components/providers/SettingsMigration";
 import { PostsMigration } from "@/components/providers/PostsMigration";
+import { TasksMigration } from "@/components/providers/TasksMigration";
+import { InstagramAuthMigration } from "@/components/providers/InstagramAuthMigration";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -35,6 +37,8 @@ export default function RootLayout({
         <ConvexClientProvider>
           <SettingsMigration />
           <PostsMigration />
+          <TasksMigration />
+          <InstagramAuthMigration />
           <div className="flex h-screen overflow-hidden bg-zinc-950">
             <Sidebar />
             <main className="flex-1 overflow-auto">{children}</main>

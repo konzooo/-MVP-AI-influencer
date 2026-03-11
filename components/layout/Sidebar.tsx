@@ -1,14 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, Menu, Images, Coins, Instagram, User, Eye, Zap, Plus, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { loadTasks, getDueTasks } from "@/lib/task-store";
-import { Task } from "@/lib/task-types";
-import { TASKS_UPDATED_EVENT, dispatchTasksUpdated } from "@/lib/task-events";
-import { runTask } from "@/lib/task-runner";
+import { useTaskStore } from "@/hooks/use-task-store";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,28 +32,7 @@ export function Sidebar() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [instagramOpen, setInstagramOpen] = useState(false);
-  const [tasks, setTasks] = useState<Task[]>([]);
-
-  useEffect(() => {
-    setTasks(loadTasks());
-    const handler = () => setTasks(loadTasks());
-    window.addEventListener(TASKS_UPDATED_EVENT, handler);
-
-    // In-app scheduler: check for due tasks every 60 seconds
-    const pollInterval = setInterval(async () => {
-      const due = getDueTasks();
-      for (const task of due) {
-        console.log(`[Scheduler] Running due task: ${task.name}`);
-        await runTask(task);
-        dispatchTasksUpdated();
-      }
-    }, 60_000);
-
-    return () => {
-      window.removeEventListener(TASKS_UPDATED_EVENT, handler);
-      clearInterval(pollInterval);
-    };
-  }, []);
+  const { tasks } = useTaskStore();
 
   return (
     <>
@@ -193,7 +169,7 @@ export function Sidebar() {
         {/* Footer */}
         <div className="border-t border-zinc-800 px-5 py-4">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] text-zinc-600">MVP v0.1 · localStorage</p>
+            <p className="text-[10px] text-zinc-600">MVP v0.2 · Convex</p>
             <CostIndicator onClick={() => setSettingsOpen(true)} />
           </div>
         </div>
