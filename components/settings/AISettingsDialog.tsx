@@ -44,7 +44,7 @@ const PROVIDER_INFO: Record<AIProvider, { name: string; cost: string; tag: strin
   },
   claude: {
     name: AI_PROVIDER_LABELS.claude,
-    cost: "$0.02",
+    cost: "Usage-based",
     tag: "CREATIVE",
   },
 };

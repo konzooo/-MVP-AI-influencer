@@ -84,7 +84,12 @@ export function ReferenceImageCard({
     if (!isEditable) return;
     try {
       setIsSaving(true);
-      const response = await fetch(`/api/reference-images/${image.filename}`, {
+      const updatePath =
+        image.sourceKey === "original" || image.sourceKey === "improved"
+          ? `/api/reference-images/source/${image.sourceKey}/${encodeURIComponent(image.filename)}`
+          : `/api/reference-images/${encodeURIComponent(image.filename)}`;
+
+      const response = await fetch(updatePath, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -226,7 +231,7 @@ export function ReferenceImageCard({
           <div className="relative w-full max-h-[60vh] overflow-hidden rounded-lg bg-zinc-900 flex items-center justify-center">
             {!imageError ? (
               <Image
-                src={image.imagePath}
+                src={image.originalPath || image.imagePath}
                 alt={image.summary}
                 loader={({ src }) => src}
                 unoptimized

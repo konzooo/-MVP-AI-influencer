@@ -18,8 +18,7 @@ import {
   buildContextFromStyleMode,
   buildContextFromKeywords,
 } from "./reference-selector";
-import { uploadToFalStorage } from "./fal";
-import { checkDailyLimit, recordGeneration, recordLLMCall } from "./cost-tracker";
+import { checkDailyLimit, getLLMUsageFromHeaders, recordGeneration, recordLLMCall } from "./cost-tracker";
 import { canPublish, recordPublish } from "./instagram-rate-limit";
 import { ReferenceImage } from "./types";
 import { loadAISettings } from "./ai-settings";
@@ -56,6 +55,24 @@ function getFilledImageForPrompt(post: PostPlan, promptIdx: number) {
     matches.find((img) => img.userProvided) ??
     null
   );
+}
+
+async function uploadImageSource(source: string): Promise<string> {
+  const response = await fetch("/api/upload", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(
+      source.startsWith("data:") ? { dataUri: source } : { src: source }
+    ),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.error || "Upload failed");
+  }
+
+  const data = await response.json();
+  return data.url as string;
 }
 
 // ─── Standalone generation function ──────────────────────────────────────────
@@ -122,11 +139,11 @@ export async function generatePostImages(
         return result;
       }
 
-      charRefPaths = [{ id: charRef.id, path: charRef.imagePath }];
+      charRefPaths = [{ id: charRef.id, path: charRef.referencePath }];
 
       // Persist selection on the post so it's stable for future runs
       post.selectedCharacterRefId = charRef.id;
-      post.selectedCharacterRefPath = charRef.imagePath;
+      post.selectedCharacterRefPath = charRef.referencePath;
       post.characterRefs = charRefPaths;
       savePostState(post);
 
@@ -134,37 +151,21 @@ export async function generatePostImages(
     }
 
     // Upload all character references to fal storage so they're publicly accessible
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+    const baseUrl =
+      process.env.NEXT_PUBLIC_BASE_URL ||
+      (typeof window !== "undefined"
+        ? window.location.origin
+        : "http://localhost:3000");
     const charRefUrls: string[] = [];
 
     for (const ref of charRefPaths) {
       log.add(`Uploading character reference ${ref.id} to fal storage...`);
       try {
-        let refBase64: string;
-        if (ref.path.startsWith("data:")) {
-          // Already a base64 data URI (user-uploaded image)
-          refBase64 = ref.path;
-        } else if (
-          ref.path.startsWith("http://") ||
-          ref.path.startsWith("https://")
-        ) {
-          const refRes = await fetch(ref.path);
-          if (!refRes.ok) {
-            throw new Error(`Failed to fetch reference image: ${refRes.status}`);
-          }
-          const refBlob = await refRes.blob();
-          const refBuffer = Buffer.from(await refBlob.arrayBuffer());
-          refBase64 = `data:${refBlob.type || "image/jpeg"};base64,${refBuffer.toString("base64")}`;
-        } else {
-          // Server path — fetch and convert to base64
-          const localRefUrl = `${baseUrl}${ref.path}`;
-          const refRes = await fetch(localRefUrl);
-          if (!refRes.ok) throw new Error(`Failed to fetch reference image: ${refRes.status}`);
-          const refBlob = await refRes.blob();
-          const refBuffer = Buffer.from(await refBlob.arrayBuffer());
-          refBase64 = `data:${refBlob.type || "image/jpeg"};base64,${refBuffer.toString("base64")}`;
-        }
-        const uploadedUrl = await uploadToFalStorage(refBase64, process.env.FAL_KEY!);
+        const uploadSourcePath =
+          ref.path.startsWith("/") && !ref.path.startsWith("//")
+            ? `${baseUrl}${ref.path}`
+            : ref.path;
+        const uploadedUrl = await uploadImageSource(uploadSourcePath);
         charRefUrls.push(uploadedUrl);
         log.add(`Character reference uploaded: ${uploadedUrl.slice(0, 60)}...`);
       } catch (err) {
@@ -240,12 +241,12 @@ export async function generatePostImages(
       // Add per-prompt references
       if (prompt.referenceImages && prompt.referenceImages.length > 0) {
         for (const ref of prompt.referenceImages) {
-          if (ref.startsWith("data:")) {
-            const uploadedUrl = await uploadToFalStorage(ref, process.env.FAL_KEY!);
-            referenceUrls.push(uploadedUrl);
-          } else {
-            referenceUrls.push(ref);
-          }
+          const uploadSourcePath =
+            ref.startsWith("/") && !ref.startsWith("//")
+              ? `${baseUrl}${ref}`
+              : ref;
+          const uploadedUrl = await uploadImageSource(uploadSourcePath);
+          referenceUrls.push(uploadedUrl);
         }
       }
 
@@ -447,7 +448,8 @@ export async function runTask(
 
         const providerUsed = (expandRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.expandCarousel;
         const expandPlan = await expandRes.json();
-        recordLLMCall(providerUsed, "expand_carousel", providerUsed === "claude" ? 0.02 : 0);
+        const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(expandRes.headers) : undefined;
+        recordLLMCall(providerUsed, "expand_carousel", usage?.cost ?? 0, usage);
         post = createEmptyPost("from_own_images", "carousel");
         Object.assign(post, expandPlan);
         post.status = "approved"; // needs generation for slides 2-3
@@ -499,7 +501,8 @@ export async function runTask(
 
         const providerUsed = (analyzeRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.analyzeImages;
         const analyzePlan = await analyzeRes.json();
-        recordLLMCall(providerUsed, "analyze_images", providerUsed === "claude" ? 0.02 : 0);
+        const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(analyzeRes.headers) : undefined;
+        recordLLMCall(providerUsed, "analyze_images", usage?.cost ?? 0, usage);
         post = createEmptyPost("from_own_images", selectedItem.postType);
         Object.assign(post, analyzePlan);
         post.status = "ready"; // skips generation — own images are final
@@ -548,7 +551,8 @@ export async function runTask(
 
       const providerUsed = (brainstormRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.brainstormCopyPost;
       const brainstormPlan = await brainstormRes.json();
-      recordLLMCall(providerUsed, "brainstorm", providerUsed === "claude" ? 0.02 : 0);
+      const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(brainstormRes.headers) : undefined;
+      recordLLMCall(providerUsed, "brainstorm", usage?.cost ?? 0, usage);
       post = createEmptyPost("copy_post", selectedItem.postType);
       Object.assign(post, brainstormPlan);
       post.status = "draft";
@@ -586,7 +590,8 @@ export async function runTask(
 
       const providerUsed = (brainstormRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.brainstormFromScratch;
       const brainstormPlan = await brainstormRes.json();
-      recordLLMCall(providerUsed, "brainstorm", providerUsed === "claude" ? 0.02 : 0);
+      const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(brainstormRes.headers) : undefined;
+      recordLLMCall(providerUsed, "brainstorm", usage?.cost ?? 0, usage);
       post = createEmptyPost("from_scratch", selectedItem.postType);
       Object.assign(post, brainstormPlan);
       post.status = "draft";
@@ -621,8 +626,8 @@ export async function runTask(
             const charRef = selectCharacterReference(refs, refContext);
             if (charRef) {
               post.selectedCharacterRefId = charRef.id;
-              post.selectedCharacterRefPath = charRef.imagePath;
-              post.characterRefs = [{ id: charRef.id, path: charRef.imagePath }];
+              post.selectedCharacterRefPath = charRef.referencePath;
+              post.characterRefs = [{ id: charRef.id, path: charRef.referencePath }];
               log.add(`Character reference selected: ${charRef.id}`);
             }
           }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { recordLLMCall } from "@/lib/cost-tracker";
+import { getLLMUsageFromHeaders, recordLLMCall } from "@/lib/cost-tracker";
 import { AI_PROVIDER_LABELS, loadAISettings } from "@/lib/ai-settings";
 import { buildPersonaContext, loadIdentity } from "@/lib/identity";
 import { loadTransparency } from "@/lib/transparency";
@@ -70,7 +70,8 @@ export function CaptionHelperDialog({
 
       const providerUsed = (res.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? activeProvider;
       const data = await res.json();
-      recordLLMCall(providerUsed, "caption_helper", providerUsed === "claude" ? 0.02 : 0);
+      const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(res.headers) : undefined;
+      recordLLMCall(providerUsed, "caption_helper", usage?.cost ?? 0, usage);
       setGeneratedCaption(data.caption);
       toast.success("Caption generated", {
         description: AI_PROVIDER_LABELS[providerUsed],

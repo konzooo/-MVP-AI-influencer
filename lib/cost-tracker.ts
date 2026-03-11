@@ -22,19 +22,30 @@ export interface LLMEntry {
   provider: LLMProvider;
   callType: LLMCallType;
   cost: number; // 0 for free providers like Gemini
+  inputTokens?: number;
+  outputTokens?: number;
+  model?: string;
+}
+
+export interface LLMUsageMetadata {
+  inputTokens?: number;
+  outputTokens?: number;
+  model?: string;
 }
 
 export interface CostSettings {
   dailyWarningLimit: number;
   dailyStopLimit: number;
+  geminiDailyLimit: number;
 }
 
-// Gemini 2.5 Flash free tier: 500 RPD (requests per day)
-const GEMINI_DAILY_LIMIT = 500;
+export const GEMINI_RPD_TIME_ZONE = "America/Los_Angeles";
+const DEFAULT_GEMINI_DAILY_LIMIT = 20;
 
 const DEFAULT_SETTINGS: CostSettings = {
   dailyWarningLimit: 1.0,
   dailyStopLimit: 5.0,
+  geminiDailyLimit: DEFAULT_GEMINI_DAILY_LIMIT,
 };
 
 // ─── Settings ─────────────────────────────────────────────────────────────
@@ -162,8 +173,51 @@ function saveLLMLog(entries: LLMEntry[]): void {
   localStorage.setItem(LLM_LOG_KEY, JSON.stringify(entries));
 }
 
+function parseNumericHeader(value: string | null): number | undefined {
+  if (!value) return undefined;
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function getDateKeyInTimeZone(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "00";
+  const day = parts.find((part) => part.type === "day")?.value ?? "00";
+
+  return `${year}-${month}-${day}`;
+}
+
+function getEntriesForCurrentDay<T extends { timestamp: string }>(
+  entries: T[],
+  timeZone?: string
+): T[] {
+  if (!timeZone) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return entries.filter((entry) => new Date(entry.timestamp) >= today);
+  }
+
+  const todayKey = getDateKeyInTimeZone(new Date(), timeZone);
+  return entries.filter(
+    (entry) => getDateKeyInTimeZone(new Date(entry.timestamp), timeZone) === todayKey
+  );
+}
+
 /** Record an LLM API call. Prunes entries older than 30 days. */
-export function recordLLMCall(provider: LLMProvider, callType: LLMCallType, cost: number = 0): void {
+export function recordLLMCall(
+  provider: LLMProvider,
+  callType: LLMCallType,
+  cost: number = 0,
+  usage?: LLMUsageMetadata
+): void {
   const entries = loadLLMLog();
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -177,30 +231,49 @@ export function recordLLMCall(provider: LLMProvider, callType: LLMCallType, cost
     timestamp: new Date().toISOString(),
     provider,
     callType,
-    cost,
+    cost: Number.isFinite(cost) ? cost : 0,
+    inputTokens: usage?.inputTokens,
+    outputTokens: usage?.outputTokens,
+    model: usage?.model,
   });
 
   saveLLMLog(pruned);
 }
 
-/** Get daily LLM call count by provider. */
-export function getDailyLLMCalls(provider?: LLMProvider): LLMEntry[] {
-  const entries = loadLLMLog();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+export function getLLMUsageFromHeaders(headers: Headers): LLMUsageMetadata & { cost: number } {
+  return {
+    cost: parseNumericHeader(headers.get("x-ai-cost-usd")) ?? 0,
+    inputTokens: parseNumericHeader(headers.get("x-ai-input-tokens")),
+    outputTokens: parseNumericHeader(headers.get("x-ai-output-tokens")),
+    model: headers.get("x-ai-model") ?? undefined,
+  };
+}
 
-  return entries.filter(
-    (e) => new Date(e.timestamp) >= today && (!provider || e.provider === provider)
+/** Get daily LLM call count by provider. */
+export function getDailyLLMCalls(
+  provider?: LLMProvider,
+  options?: { timeZone?: string }
+): LLMEntry[] {
+  return getEntriesForCurrentDay(loadLLMLog(), options?.timeZone).filter(
+    (entry) => !provider || entry.provider === provider
   );
+}
+
+/** Get Gemini call count for the current Pacific day, matching Google's RPD reset. */
+export function getGeminiRpdCount(): number {
+  return getDailyLLMCalls("gemini", { timeZone: GEMINI_RPD_TIME_ZONE }).length;
 }
 
 /** Get Gemini usage stats: count and limit. */
 export function getGeminiUsage(): { count: number; limit: number; percentage: number } {
-  const count = getDailyLLMCalls("gemini").length;
+  const settings = getCostSettings();
+  const count = getGeminiRpdCount();
+  const limit = Math.max(settings.geminiDailyLimit, 1);
+
   return {
     count,
-    limit: GEMINI_DAILY_LIMIT,
-    percentage: Math.min((count / GEMINI_DAILY_LIMIT) * 100, 100),
+    limit,
+    percentage: Math.min((count / limit) * 100, 100),
   };
 }
 

@@ -1,23 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  isReferenceLibrarySourceKey,
   readReferenceImageAsset,
   updateReferenceImageMetadata,
 } from "@/lib/reference-image-library";
 
-const LEGACY_SOURCE_KEY = "original";
-
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ filename: string }> }
+  {
+    params,
+  }: {
+    params: Promise<{ sourceKey: string; filename: string }>;
+  }
 ) {
+  let sourceKey = "";
   let filename = "";
 
   try {
     const resolvedParams = await params;
+    sourceKey = resolvedParams.sourceKey;
     filename = resolvedParams.filename;
 
+    if (!isReferenceLibrarySourceKey(sourceKey)) {
+      return new NextResponse("Image not found", { status: 404 });
+    }
+
     const { buffer, contentType } = await readReferenceImageAsset(
-      LEGACY_SOURCE_KEY,
+      sourceKey,
       filename,
       request.nextUrl.searchParams
     );
@@ -29,21 +38,35 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error(`Failed to serve legacy reference image ${filename}:`, error);
+    console.error(
+      `Failed to serve reference image ${sourceKey}/${filename}:`,
+      error
+    );
     return new NextResponse("Image not found", { status: 404 });
   }
 }
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ filename: string }> }
+  {
+    params,
+  }: {
+    params: Promise<{ sourceKey: string; filename: string }>;
+  }
 ) {
   try {
     const resolvedParams = await params;
-    const filename = resolvedParams.filename;
-    const data = await request.json();
+    const { sourceKey, filename } = resolvedParams;
 
-    await updateReferenceImageMetadata(LEGACY_SOURCE_KEY, filename, data);
+    if (!isReferenceLibrarySourceKey(sourceKey)) {
+      return NextResponse.json(
+        { error: "Unknown reference image source" },
+        { status: 404 }
+      );
+    }
+
+    const data = await request.json();
+    await updateReferenceImageMetadata(sourceKey, filename, data);
 
     return NextResponse.json({
       success: true,
@@ -52,7 +75,7 @@ export async function PUT(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to update image metadata";
-    console.error("Failed to update legacy reference image metadata:", error);
+    console.error("Failed to update reference image metadata:", error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

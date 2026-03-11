@@ -15,12 +15,14 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Coins, TrendingUp, Cpu, Image as ImageIcon } from "lucide-react";
 import {
+  GEMINI_RPD_TIME_ZONE,
   getCostSettings,
   saveCostSettings,
   getDailySpend,
   getWeeklySpend,
   getDailyGenerationCount,
   getDailyLLMCalls,
+  getGeminiRpdCount,
   getGeminiUsage,
   getClaudeDailySpend,
   getWeeklyLLMSpend,
@@ -37,7 +39,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [dailySpend, setDailySpend] = useState(0);
   const [weeklySpend, setWeeklySpend] = useState(0);
   const [dailyCount, setDailyCount] = useState(0);
-  const [geminiUsage, setGeminiUsage] = useState({ count: 0, limit: 500, percentage: 0 });
+  const [geminiUsage, setGeminiUsage] = useState(() => getGeminiUsage());
   const [claudeDailySpend, setClaudeDailySpend] = useState(0);
   const [claudeWeeklySpend, setClaudeWeeklySpend] = useState(0);
   const [geminiDailyCount, setGeminiDailyCount] = useState(0);
@@ -54,7 +56,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       setGeminiUsage(getGeminiUsage());
       setClaudeDailySpend(getClaudeDailySpend());
       setClaudeWeeklySpend(getWeeklyLLMSpend("claude"));
-      setGeminiDailyCount(getDailyLLMCalls("gemini").length);
+      setGeminiDailyCount(getGeminiRpdCount());
       setClaudeDailyCount(getDailyLLMCalls("claude").length);
     };
 
@@ -107,7 +109,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </Badge>
               </div>
               <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1.5">
-                <span>{geminiUsage.count} / {geminiUsage.limit} requests today</span>
+                <span>{geminiUsage.count} / {geminiUsage.limit} requests this Pacific day</span>
                 <span>{geminiUsage.percentage.toFixed(0)}%</span>
               </div>
               <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
@@ -123,7 +125,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 />
               </div>
               <p className="text-[10px] text-zinc-600 mt-1">
-                {geminiDailyCount} call{geminiDailyCount !== 1 ? "s" : ""} today
+                {geminiDailyCount} call{geminiDailyCount !== 1 ? "s" : ""} in the current Google quota day
+              </p>
+              <p className="text-[10px] text-zinc-600">
+                Reset window: Pacific Time ({GEMINI_RPD_TIME_ZONE})
               </p>
             </div>
 
@@ -226,6 +231,32 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
           {/* Limits */}
           <div className="space-y-4">
+            <h4 className="text-xs font-medium text-zinc-400">LLM Limits</h4>
+
+            <div className="space-y-2">
+              <Label className="text-xs text-zinc-500">
+                Gemini daily request limit (Pacific day)
+              </Label>
+              <Input
+                type="number"
+                step="1"
+                min="1"
+                value={settings.geminiDailyLimit}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    geminiDailyLimit: Math.max(1, parseInt(e.target.value, 10) || 1),
+                  })
+                }
+                className="border-zinc-800 bg-zinc-900 text-sm text-zinc-100"
+              />
+              <p className="text-[10px] text-zinc-600">
+                Set this to the quota shown in Google AI Studio for this project.
+              </p>
+            </div>
+
+            <Separator className="bg-zinc-800" />
+
             <h4 className="text-xs font-medium text-zinc-400">Image Generation Limits</h4>
 
             <div className="space-y-2">

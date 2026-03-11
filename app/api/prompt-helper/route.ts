@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DEFAULT_TRANSPARENCY } from "@/lib/transparency";
-import { generatePromptWithClaude } from "@/lib/claude";
+import { buildClaudeResponseHeaders, generatePromptWithClaude } from "@/lib/claude";
 import { isAIProvider } from "@/lib/ai-settings";
 import { extractGeminiErrorMessage } from "@/lib/llm-errors";
 
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (provider === "claude") {
-      const prompt = await generatePromptWithClaude({
+      const result = await generatePromptWithClaude({
         userInput,
         currentPrompt,
         referenceImages,
@@ -44,12 +44,8 @@ export async function POST(request: NextRequest) {
       });
 
       return NextResponse.json(
-        { prompt },
-        {
-          headers: {
-            "x-ai-provider": "claude",
-          },
-        }
+        { prompt: result.data },
+        { headers: buildClaudeResponseHeaders(result.usage) }
       );
     }
 

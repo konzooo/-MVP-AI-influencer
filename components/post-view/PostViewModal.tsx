@@ -111,6 +111,14 @@ const POST_TYPE_LABELS: Record<string, string> = {
   story: "Story",
 };
 
+function getReferenceStoragePath(image: ReferenceImage): string {
+  return image.referencePath || image.imagePath;
+}
+
+function getReferencePreviewPath(image: ReferenceImage): string {
+  return image.originalPath || image.imagePath;
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface PostViewModalProps {
@@ -266,8 +274,11 @@ export function PostViewModal({
             if (cr.id.startsWith("upload-")) {
               return {
                 id: cr.id,
+                sourceKey: "uploaded",
                 filename: "uploaded",
                 imagePath: cr.path,
+                originalPath: cr.path,
+                referencePath: cr.path,
                 thumbnailPath: cr.path,
                 summary: "Uploaded image",
                 tags: [],
@@ -276,13 +287,30 @@ export function PostViewModal({
               } as ReferenceImage;
             }
 
-            return allRefs.find((r) => r.id === cr.id) ?? allRefs.find((r) => r.imagePath === cr.path);
+            return (
+              allRefs.find((r) => r.id === cr.id) ??
+              allRefs.find(
+                (r) =>
+                  r.imagePath === cr.path ||
+                  r.originalPath === cr.path ||
+                  r.referencePath === cr.path
+              )
+            );
           })
           .filter(Boolean) as ReferenceImage[];
       }
 
       if (post.selectedCharacterRefId) {
-        const stored = allRefs.find((r) => r.id === post.selectedCharacterRefId);
+        const stored =
+          allRefs.find((r) => r.id === post.selectedCharacterRefId) ??
+          (post.selectedCharacterRefPath
+            ? allRefs.find(
+                (r) =>
+                  r.imagePath === post.selectedCharacterRefPath ||
+                  r.originalPath === post.selectedCharacterRefPath ||
+                  r.referencePath === post.selectedCharacterRefPath
+              )
+            : undefined);
         return stored ? [stored] : [];
       }
 
@@ -311,8 +339,11 @@ export function PostViewModal({
           if (ownImage?.url) {
             const fallbackRef: ReferenceImage = {
               id: `upload-own-${post.id}`,
+              sourceKey: "uploaded",
               filename: "uploaded",
               imagePath: ownImage.url,
+              originalPath: ownImage.url,
+              referencePath: ownImage.url,
               thumbnailPath: ownImage.url,
               summary: "Own image reference",
               tags: [],
@@ -332,9 +363,9 @@ export function PostViewModal({
 
             const updated: PostPlan = {
               ...post,
-              characterRefs: [{ id: fallbackRef.id, path: fallbackRef.imagePath }],
+              characterRefs: [{ id: fallbackRef.id, path: getReferenceStoragePath(fallbackRef) }],
               selectedCharacterRefId: fallbackRef.id,
-              selectedCharacterRefPath: fallbackRef.imagePath,
+              selectedCharacterRefPath: getReferenceStoragePath(fallbackRef),
             };
             setPost(updated);
             savePost(updated);
@@ -421,10 +452,15 @@ export function PostViewModal({
     setSelectedRefs(newRefs);
     const updated: PostPlan = {
       ...post,
-      characterRefs: newRefs.map((r) => ({ id: r.id, path: r.imagePath })),
+      characterRefs: newRefs.map((r) => ({
+        id: r.id,
+        path: getReferenceStoragePath(r),
+      })),
       // Also update legacy fields for backwards compat
       selectedCharacterRefId: newRefs[0]?.id,
-      selectedCharacterRefPath: newRefs[0]?.imagePath,
+      selectedCharacterRefPath: newRefs[0]
+        ? getReferenceStoragePath(newRefs[0])
+        : undefined,
     };
     setPost(updated);
     savePost(updated);
@@ -436,9 +472,14 @@ export function PostViewModal({
     setSelectedRefs(newRefs);
     const updated: PostPlan = {
       ...post,
-      characterRefs: newRefs.map((r) => ({ id: r.id, path: r.imagePath })),
+      characterRefs: newRefs.map((r) => ({
+        id: r.id,
+        path: getReferenceStoragePath(r),
+      })),
       selectedCharacterRefId: newRefs[0]?.id,
-      selectedCharacterRefPath: newRefs[0]?.imagePath,
+      selectedCharacterRefPath: newRefs[0]
+        ? getReferenceStoragePath(newRefs[0])
+        : undefined,
     };
     setPost(updated);
     savePost(updated);
@@ -449,8 +490,11 @@ export function PostViewModal({
     if (selectedRefs.length >= 10) return;
     const uploadedRef: ReferenceImage = {
       id: `upload-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      sourceKey: "uploaded",
       filename: "uploaded",
       imagePath: dataUri,
+      originalPath: dataUri,
+      referencePath: dataUri,
       thumbnailPath: dataUri,
       summary: "Uploaded image",
       tags: [],
@@ -470,9 +514,14 @@ export function PostViewModal({
     setSelectedRefs(newRefs);
     const updated: PostPlan = {
       ...post,
-      characterRefs: newRefs.map((r) => ({ id: r.id, path: r.imagePath })),
+      characterRefs: newRefs.map((r) => ({
+        id: r.id,
+        path: getReferenceStoragePath(r),
+      })),
       selectedCharacterRefId: newRefs[0]?.id,
-      selectedCharacterRefPath: newRefs[0]?.imagePath,
+      selectedCharacterRefPath: newRefs[0]
+        ? getReferenceStoragePath(newRefs[0])
+        : undefined,
     };
     setPost(updated);
     savePost(updated);
@@ -556,9 +605,14 @@ export function PostViewModal({
     setSelectedRefs(combined);
     const updated: PostPlan = {
       ...post,
-      characterRefs: combined.map((r) => ({ id: r.id, path: r.imagePath })),
+      characterRefs: combined.map((r) => ({
+        id: r.id,
+        path: getReferenceStoragePath(r),
+      })),
       selectedCharacterRefId: combined[0]?.id,
-      selectedCharacterRefPath: combined[0]?.imagePath,
+      selectedCharacterRefPath: combined[0]
+        ? getReferenceStoragePath(combined[0])
+        : undefined,
     };
     setPost(updated);
     savePost(updated);
@@ -1140,11 +1194,11 @@ export function PostViewModal({
                                   key={ref.id}
                                   className="group/ref relative cursor-pointer"
                                   onClick={() =>
-                                    setLightboxUrl(ref.thumbnailPath || ref.imagePath)
+                                    setLightboxUrl(getReferencePreviewPath(ref))
                                   }
                                 >
                                   <img
-                                    src={ref.thumbnailPath || ref.imagePath}
+                                    src={ref.thumbnailPath || getReferencePreviewPath(ref)}
                                     alt={ref.summary || ""}
                                     className={`h-20 w-20 rounded-md border object-cover ${
                                       isOwnSeedRef

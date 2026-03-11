@@ -5,7 +5,7 @@ import { savePost } from "./store";
 import { loadIdentity, buildPersonaContext } from "./identity";
 import { loadAISettings, type AIProvider, type CarouselStyle } from "./ai-settings";
 import { selectCharacterReference, buildContextFromKeywords } from "./reference-selector";
-import { recordLLMCall } from "./cost-tracker";
+import { getLLMUsageFromHeaders, recordLLMCall } from "./cost-tracker";
 import type { ReferenceImage } from "./types";
 
 /**
@@ -68,7 +68,8 @@ export async function brainstormPost(params: {
 
   const aiProviderUsed = (response.headers.get("x-ai-provider") as typeof aiProvider | null) ?? aiProvider;
   const plan = await response.json();
-  recordLLMCall(aiProviderUsed, "brainstorm", aiProviderUsed === "claude" ? 0.02 : 0);
+  const usage = aiProviderUsed === "claude" ? getLLMUsageFromHeaders(response.headers) : undefined;
+  recordLLMCall(aiProviderUsed, "brainstorm", usage?.cost ?? 0, usage);
 
   const newPost = createEmptyPost(creationMode, postType);
   newPost.postType = postType;
@@ -106,8 +107,8 @@ export async function brainstormPost(params: {
           const charRef = selectCharacterReference(refs, refContext);
           if (charRef) {
             newPost.selectedCharacterRefId = charRef.id;
-            newPost.selectedCharacterRefPath = charRef.imagePath;
-            newPost.characterRefs = [{ id: charRef.id, path: charRef.imagePath }];
+            newPost.selectedCharacterRefPath = charRef.referencePath;
+            newPost.characterRefs = [{ id: charRef.id, path: charRef.referencePath }];
             console.log("[brainstormPost] Smart-selected character reference:", charRef.id);
           }
         }
@@ -196,7 +197,8 @@ async function brainstormOwnImages(params: {
 
     const providerUsed = (expandResponse.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? expandCarouselProvider;
     const result = await expandResponse.json();
-    recordLLMCall(providerUsed, "expand_carousel", providerUsed === "claude" ? 0.02 : 0);
+    const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(expandResponse.headers) : undefined;
+    recordLLMCall(providerUsed, "expand_carousel", usage?.cost ?? 0, usage);
 
     // Upload user image to FAL storage before saving (base64 is too large for localStorage)
     const uploadedUrls = await uploadImages([images[0]]);
@@ -266,7 +268,8 @@ async function brainstormOwnImages(params: {
 
   const providerUsed = (response.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? analyzeImagesProvider;
   const result = await response.json();
-  recordLLMCall(providerUsed, "analyze_images", providerUsed === "claude" ? 0.02 : 0);
+  const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(response.headers) : undefined;
+  recordLLMCall(providerUsed, "analyze_images", usage?.cost ?? 0, usage);
 
   // Upload user images to FAL storage before saving (base64 is too large for localStorage)
   const uploadedUrls = await uploadImages(images);

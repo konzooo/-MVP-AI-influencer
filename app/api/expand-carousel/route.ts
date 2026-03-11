@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { expandOwnImageForCarousel } from "@/lib/gemini";
-import { expandOwnImageForCarouselWithClaude } from "@/lib/claude";
+import { buildClaudeResponseHeaders, expandOwnImageForCarouselWithClaude } from "@/lib/claude";
 import { isAIProvider } from "@/lib/ai-settings";
 
 export async function POST(request: NextRequest) {
@@ -17,11 +17,7 @@ export async function POST(request: NextRequest) {
 
     if (provider === "claude") {
       const result = await expandOwnImageForCarouselWithClaude(image, notes || "", personaContext, carouselStyle);
-      return NextResponse.json(result, {
-        headers: {
-          "x-ai-provider": "claude",
-        },
-      });
+      return NextResponse.json(result.data, { headers: buildClaudeResponseHeaders(result.usage) });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { brainstormWithGemini, BrainstormRequest } from "@/lib/gemini";
-import { brainstormWithClaude } from "@/lib/claude";
+import { brainstormWithClaude, buildClaudeResponseHeaders } from "@/lib/claude";
 import { isAIProvider } from "@/lib/ai-settings";
 
 export async function POST(request: NextRequest) {
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (provider === "claude") {
-      const plan = await brainstormWithClaude({
+      const result = await brainstormWithClaude({
         idea: idea || "",
         images: images || [],
         creationMode: creationMode || "from_scratch",
@@ -25,11 +25,7 @@ export async function POST(request: NextRequest) {
         personaContext,
         carouselStyle: (carouselStyle as "quick_snaps" | "curated_series") || undefined,
       });
-      return NextResponse.json(plan, {
-        headers: {
-          "x-ai-provider": "claude",
-        },
-      });
+      return NextResponse.json(result.data, { headers: buildClaudeResponseHeaders(result.usage) });
     }
 
     const geminApiKey = process.env.GEMINI_API_KEY;

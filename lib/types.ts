@@ -27,6 +27,12 @@ export interface GenerationSettings {
   enableSafetyChecker: boolean;
 }
 
+export type ReferenceImageSourceKey =
+  | "original"
+  | "improved"
+  | "generated"
+  | "uploaded";
+
 export interface GeneratedImage {
   id: string;
   url: string;
@@ -94,7 +100,7 @@ export interface PostPlan {
 
   // Character reference — selected once at draft creation, used at generation
   selectedCharacterRefId?: string;    // Reference library image ID (legacy single)
-  selectedCharacterRefPath?: string;  // e.g. "/api/reference-images/alba_028.jpg" (legacy single)
+  selectedCharacterRefPath?: string;  // e.g. "/api/reference-images/alba_028.jpg" or a reference-sized source path
   characterRefs?: { id: string; path: string }[];  // Multiple character references (up to 10)
 }
 
@@ -122,8 +128,12 @@ export interface ReferenceImageMetadata {
 
 export interface ReferenceImage {
   id: string;
+  sourceKey: ReferenceImageSourceKey;
   filename: string;
+  /** Legacy/default preview path. Prefer originalPath/referencePath for explicit behavior. */
   imagePath: string;
+  originalPath: string;
+  referencePath: string;
   thumbnailPath: string;
   summary: string;
   tags: string[];

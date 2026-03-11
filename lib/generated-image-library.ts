@@ -85,8 +85,11 @@ function buildTags(
 function entryToReferenceImage(entry: GeneratedImageLibraryEntry): ReferenceImage {
   return {
     id: entry.id,
+    sourceKey: "generated",
     filename: entry.filename,
     imagePath: entry.url,
+    originalPath: entry.url,
+    referencePath: entry.url,
     thumbnailPath: entry.url,
     summary: entry.prompt || "Saved fal.ai output",
     tags: entry.tags,

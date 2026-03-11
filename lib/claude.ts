@@ -3,6 +3,11 @@ import { DEFAULT_TRANSPARENCY, resolveCarouselStyle } from "./transparency";
 import type { CarouselStyle } from "./ai-settings";
 import { extractClaudeErrorMessage } from "./llm-errors";
 
+const CLAUDE_MODEL = "claude-3-5-sonnet-20241022";
+const TOKENS_PER_MILLION = 1_000_000;
+const CLAUDE_INPUT_COST_PER_MILLION_TOKENS_USD = 3;
+const CLAUDE_OUTPUT_COST_PER_MILLION_TOKENS_USD = 15;
+
 const {
   fromScratchPrompt: FROM_SCRATCH_PROMPT,
   copyPostPrompt: COPY_POST_PROMPT,
@@ -60,7 +65,29 @@ interface CaptionHelperRequest {
   systemPrompt?: string;
 }
 
+interface ClaudeApiUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+}
+
+interface ClaudeApiResponse {
+  content?: Array<{ type?: string; text?: string }>;
+  usage?: ClaudeApiUsage;
+}
+
 type ClaudeJsonResult = Record<string, unknown>;
+
+export interface ClaudeUsageMetadata {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
+export interface ClaudeResult<T> {
+  data: T;
+  usage: ClaudeUsageMetadata;
+}
 
 function getAnthropicApiKey(): string {
   const apiKey = process.env.ANTHROPIC_API_KEY || process.env.NEXT_PUBLIC_ANTHROPIC_API_KEY;
@@ -89,6 +116,35 @@ function stripMarkdownFences(text: string): string {
 function getBrainstormSystemPrompt(mode: CreationMode, carouselStyle: CarouselStyle = "quick_snaps"): string {
   const raw = mode === "copy_post" ? COPY_POST_PROMPT : FROM_SCRATCH_PROMPT;
   return resolveCarouselStyle(raw, carouselStyle);
+}
+
+function calculateClaudeCostUsd(usage: ClaudeApiUsage | undefined): number {
+  const inputTokens = usage?.input_tokens ?? 0;
+  const outputTokens = usage?.output_tokens ?? 0;
+
+  const inputCost = (inputTokens / TOKENS_PER_MILLION) * CLAUDE_INPUT_COST_PER_MILLION_TOKENS_USD;
+  const outputCost = (outputTokens / TOKENS_PER_MILLION) * CLAUDE_OUTPUT_COST_PER_MILLION_TOKENS_USD;
+
+  return Number((inputCost + outputCost).toFixed(6));
+}
+
+function buildClaudeUsageMetadata(usage: ClaudeApiUsage | undefined): ClaudeUsageMetadata {
+  return {
+    model: CLAUDE_MODEL,
+    inputTokens: usage?.input_tokens ?? 0,
+    outputTokens: usage?.output_tokens ?? 0,
+    costUsd: calculateClaudeCostUsd(usage),
+  };
+}
+
+export function buildClaudeResponseHeaders(usage: ClaudeUsageMetadata): Record<string, string> {
+  return {
+    "x-ai-provider": "claude",
+    "x-ai-model": usage.model,
+    "x-ai-cost-usd": usage.costUsd.toFixed(6),
+    "x-ai-input-tokens": String(usage.inputTokens),
+    "x-ai-output-tokens": String(usage.outputTokens),
+  };
 }
 
 async function toClaudeImageBlock(image: string): Promise<ClaudeImageBlock | null> {
@@ -145,7 +201,7 @@ async function claudeRequest({
   images = [],
   maxTokens = 2048,
   temperature = 0.8,
-}: ClaudeRequestOptions): Promise<string> {
+}: ClaudeRequestOptions): Promise<{ text: string; usage: ClaudeUsageMetadata }> {
   const apiKey = getAnthropicApiKey();
   const content = await buildClaudeContentBlocks(userMessage, images);
 
@@ -157,7 +213,7 @@ async function claudeRequest({
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-3-5-sonnet-20241022",
+      model: CLAUDE_MODEL,
       max_tokens: maxTokens,
       temperature,
       system: systemPrompt,
@@ -174,10 +230,10 @@ async function claudeRequest({
     throw new Error(await extractClaudeErrorMessage(response));
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as ClaudeApiResponse;
   const text = data.content
-    ?.filter((item: { type?: string; text?: string }) => item.type === "text" && item.text)
-    .map((item: { text: string }) => item.text)
+    ?.filter((item) => item.type === "text" && item.text)
+    .map((item) => item.text as string)
     .join("\n")
     .trim();
 
@@ -185,7 +241,10 @@ async function claudeRequest({
     throw new Error("No response from Claude");
   }
 
-  return text;
+  return {
+    text,
+    usage: buildClaudeUsageMetadata(data.usage),
+  };
 }
 
 function parseClaudeJsonResponse<T>(text: string): T {
@@ -210,13 +269,13 @@ function buildBrainstormUserMessage(request: ClaudeBrainstormRequest): string {
   return contextParts.join("\n");
 }
 
-export async function brainstormWithClaude(request: ClaudeBrainstormRequest): Promise<ClaudeJsonResult> {
+export async function brainstormWithClaude(request: ClaudeBrainstormRequest): Promise<ClaudeResult<ClaudeJsonResult>> {
   let systemPrompt = getBrainstormSystemPrompt(request.creationMode, request.carouselStyle || "quick_snaps");
   if (request.personaContext) {
     systemPrompt = `${request.personaContext}\n\n${systemPrompt}`;
   }
 
-  const text = await claudeRequest({
+  const response = await claudeRequest({
     systemPrompt,
     userMessage: buildBrainstormUserMessage(request),
     images: request.images,
@@ -224,14 +283,17 @@ export async function brainstormWithClaude(request: ClaudeBrainstormRequest): Pr
     temperature: DEFAULT_TRANSPARENCY.geminiConfig.temperature.brainstorm,
   });
 
-  return parseClaudeJsonResponse(text);
+  return {
+    data: parseClaudeJsonResponse(response.text),
+    usage: response.usage,
+  };
 }
 
 export async function analyzeImagesWithClaude(
   images: string[],
   notes: string,
   personaContext?: string
-): Promise<ClaudeJsonResult> {
+): Promise<ClaudeResult<ClaudeJsonResult>> {
   let systemPrompt = ANALYZE_OWN_IMAGES_PROMPT;
   if (personaContext) {
     systemPrompt = `${personaContext}\n\n${systemPrompt}`;
@@ -242,7 +304,7 @@ export async function analyzeImagesWithClaude(
     userMessage += `\n\nAdditional notes: ${notes}`;
   }
 
-  const text = await claudeRequest({
+  const response = await claudeRequest({
     systemPrompt,
     userMessage,
     images,
@@ -250,7 +312,10 @@ export async function analyzeImagesWithClaude(
     temperature: DEFAULT_TRANSPARENCY.geminiConfig.temperature.analyzeImages,
   });
 
-  return parseClaudeJsonResponse(text);
+  return {
+    data: parseClaudeJsonResponse(response.text),
+    usage: response.usage,
+  };
 }
 
 export async function expandOwnImageForCarouselWithClaude(
@@ -258,7 +323,7 @@ export async function expandOwnImageForCarouselWithClaude(
   notes: string,
   personaContext?: string,
   carouselStyle?: CarouselStyle
-): Promise<ClaudeJsonResult> {
+): Promise<ClaudeResult<ClaudeJsonResult>> {
   let systemPrompt = resolveCarouselStyle(EXPAND_CAROUSEL_PROMPT, carouselStyle || "quick_snaps");
   if (personaContext) {
     systemPrompt = `${personaContext}\n\n${systemPrompt}`;
@@ -269,7 +334,7 @@ export async function expandOwnImageForCarouselWithClaude(
     userMessage += `\n\nAdditional notes: ${notes}`;
   }
 
-  const text = await claudeRequest({
+  const response = await claudeRequest({
     systemPrompt,
     userMessage,
     images: [image],
@@ -277,7 +342,10 @@ export async function expandOwnImageForCarouselWithClaude(
     temperature: DEFAULT_TRANSPARENCY.geminiConfig.temperature.expandCarousel,
   });
 
-  return parseClaudeJsonResponse(text);
+  return {
+    data: parseClaudeJsonResponse(response.text),
+    usage: response.usage,
+  };
 }
 
 export async function generatePromptWithClaude({
@@ -285,14 +353,14 @@ export async function generatePromptWithClaude({
   currentPrompt,
   referenceImages,
   systemPrompt,
-}: PromptHelperRequest): Promise<string> {
+}: PromptHelperRequest): Promise<ClaudeResult<string>> {
   let userMessage = `User request: ${userInput}\n\n`;
   if (currentPrompt) {
     userMessage += `Current prompt: ${currentPrompt}\n\n`;
   }
   userMessage += `Reference images: ${referenceImages.length} image(s) attached.`;
 
-  const text = await claudeRequest({
+  const response = await claudeRequest({
     systemPrompt: systemPrompt?.trim() || PROMPT_HELPER_PROMPT,
     userMessage,
     images: referenceImages,
@@ -300,7 +368,10 @@ export async function generatePromptWithClaude({
     temperature: 0.7,
   });
 
-  return stripMarkdownFences(text);
+  return {
+    data: stripMarkdownFences(response.text),
+    usage: response.usage,
+  };
 }
 
 export async function generateCaptionWithClaude({
@@ -309,7 +380,7 @@ export async function generateCaptionWithClaude({
   imageUrls,
   personaContext,
   systemPrompt,
-}: CaptionHelperRequest): Promise<string> {
+}: CaptionHelperRequest): Promise<ClaudeResult<string>> {
   const activeSystemPrompt = systemPrompt?.trim() || CAPTION_HELPER_PROMPT;
   const resolvedSystemPrompt = personaContext?.trim()
     ? `${personaContext}\n\n${activeSystemPrompt}`
@@ -317,7 +388,7 @@ export async function generateCaptionWithClaude({
 
   const userMessage = `Current caption: ${currentCaption?.trim() || "(none)"}\n\nRequest: ${userRequest.trim()}\n\nPlease write a new Instagram caption based on the image(s) and request above.`;
 
-  const text = await claudeRequest({
+  const response = await claudeRequest({
     systemPrompt: resolvedSystemPrompt,
     userMessage,
     images: imageUrls.slice(0, 4),
@@ -325,5 +396,8 @@ export async function generateCaptionWithClaude({
     temperature: 0.9,
   });
 
-  return stripMarkdownFences(text).replace(/^["']|["']$/g, "");
+  return {
+    data: stripMarkdownFences(response.text).replace(/^["']|["']$/g, ""),
+    usage: response.usage,
+  };
 }

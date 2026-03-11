@@ -118,8 +118,9 @@ export function CreatePostModal({
   const handleLibraryImagesSelected = async (selected: ReferenceImage[]) => {
     const libraryImages: string[] = [];
     for (const img of selected) {
+      const referenceSrc = img.referencePath || img.imagePath;
       try {
-        const res = await fetch(img.imagePath);
+        const res = await fetch(referenceSrc);
         const blob = await res.blob();
         const dataUri = await new Promise<string>((resolve) => {
           const reader = new FileReader();
@@ -128,8 +129,11 @@ export function CreatePostModal({
         });
         libraryImages.push(dataUri);
       } catch {
-        if (img.imagePath.startsWith("http://") || img.imagePath.startsWith("https://")) {
-          libraryImages.push(img.imagePath);
+        if (
+          referenceSrc.startsWith("http://") ||
+          referenceSrc.startsWith("https://")
+        ) {
+          libraryImages.push(referenceSrc);
         }
       }
     }

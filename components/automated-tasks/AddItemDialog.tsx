@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -43,18 +43,6 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
 
   const isCarousel = defaultPostType === "carousel";
 
-  // Load library images when switching to library source
-  useEffect(() => {
-    if (imageSource === "library" && libraryImages.length === 0 && !libraryLoading) {
-      setLibraryLoading(true);
-      fetch("/api/reference-images")
-        .then((res) => res.json())
-        .then((data) => setLibraryImages(data.images || []))
-        .catch((err) => console.error("Failed to load library:", err))
-        .finally(() => setLibraryLoading(false));
-    }
-  }, [imageSource, libraryImages.length, libraryLoading]);
-
   const resetState = () => {
     setNotes("");
     setUploading(false);
@@ -67,6 +55,37 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
   const handleClose = () => {
     resetState();
     onOpenChange(false);
+  };
+
+  const handleImageSourceChange = (nextSource: ImageSource) => {
+    setImageSource(nextSource);
+
+    if (nextSource !== "library" || libraryImages.length > 0 || libraryLoading) {
+      return;
+    }
+
+    setLibraryLoading(true);
+    fetch("/api/reference-images")
+      .then((res) => res.json())
+      .then((data) => setLibraryImages(data.images || []))
+      .catch((err) => console.error("Failed to load library:", err))
+      .finally(() => setLibraryLoading(false));
+  };
+
+  const uploadImageSource = async (payload: { dataUri?: string; src?: string }) => {
+    const response = await fetch("/api/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.error || "Upload failed");
+    }
+
+    const data = await response.json();
+    return data.url as string;
   };
 
   const handleFileSelect = async (files: FileList | null) => {
@@ -85,9 +104,7 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
       newPreviews.push(preview);
 
       try {
-        // Upload directly to FAL storage client-side
-        const { uploadToFalStorageClient } = await import("@/lib/fal-client");
-        const url = await uploadToFalStorageClient(preview);
+        const url = await uploadImageSource({ dataUri: preview });
         newUrls.push(url);
       } catch (err) {
         console.error("Upload error:", err);
@@ -142,19 +159,10 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
 
     for (const img of selected) {
       try {
-        const imgRes = await fetch(img.imagePath);
-        const blob = await imgRes.blob();
-        const reader = new FileReader();
-        const dataUri = await new Promise<string>((resolve) => {
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.readAsDataURL(blob);
-        });
-
         previews.push(img.thumbnailPath);
-
-        // Upload directly to FAL storage client-side
-        const { uploadToFalStorageClient } = await import("@/lib/fal-client");
-        const url = await uploadToFalStorageClient(dataUri);
+        const url = await uploadImageSource({
+          src: img.referencePath || img.imagePath,
+        });
         urls.push(url);
       } catch (err) {
         console.error("Library upload error:", err);
@@ -268,7 +276,7 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
             {type === "own_image" && (
               <div className="mt-1.5 flex gap-1.5">
                 <button
-                  onClick={() => setImageSource("upload")}
+                  onClick={() => handleImageSourceChange("upload")}
                   className={`flex items-center gap-1 rounded px-2.5 py-1 text-xs transition-colors ${
                     imageSource === "upload"
                       ? "bg-zinc-700 text-zinc-100"
@@ -279,7 +287,7 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
                   Upload
                 </button>
                 <button
-                  onClick={() => setImageSource("library")}
+                  onClick={() => handleImageSourceChange("library")}
                   className={`flex items-center gap-1 rounded px-2.5 py-1 text-xs transition-colors ${
                     imageSource === "library"
                       ? "bg-zinc-700 text-zinc-100"

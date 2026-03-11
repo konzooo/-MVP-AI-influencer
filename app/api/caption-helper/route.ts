@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DEFAULT_TRANSPARENCY } from "@/lib/transparency";
-import { generateCaptionWithClaude } from "@/lib/claude";
+import { buildClaudeResponseHeaders, generateCaptionWithClaude } from "@/lib/claude";
 import { isAIProvider } from "@/lib/ai-settings";
 import { extractGeminiErrorMessage } from "@/lib/llm-errors";
 
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
   if (provider === "claude") {
     try {
-      const caption = await generateCaptionWithClaude({
+      const result = await generateCaptionWithClaude({
         userRequest,
         currentCaption,
         imageUrls: imageUrls || [],
@@ -25,12 +25,8 @@ export async function POST(request: NextRequest) {
       });
 
       return NextResponse.json(
-        { caption },
-        {
-          headers: {
-            "x-ai-provider": "claude",
-          },
-        }
+        { caption: result.data },
+        { headers: buildClaudeResponseHeaders(result.usage) }
       );
     } catch (error) {
       return NextResponse.json(

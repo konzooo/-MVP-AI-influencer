@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeImagesWithGemini } from "@/lib/gemini";
-import { analyzeImagesWithClaude } from "@/lib/claude";
+import { analyzeImagesWithClaude, buildClaudeResponseHeaders } from "@/lib/claude";
 import { isAIProvider } from "@/lib/ai-settings";
 
 export async function POST(request: NextRequest) {
@@ -25,11 +25,7 @@ export async function POST(request: NextRequest) {
 
     if (provider === "claude") {
       const result = await analyzeImagesWithClaude(images, notes || "", personaContext);
-      return NextResponse.json(result, {
-        headers: {
-          "x-ai-provider": "claude",
-        },
-      });
+      return NextResponse.json(result.data, { headers: buildClaudeResponseHeaders(result.usage) });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;

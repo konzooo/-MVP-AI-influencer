@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { recordLLMCall } from "@/lib/cost-tracker";
+import { getLLMUsageFromHeaders, recordLLMCall } from "@/lib/cost-tracker";
 import { AI_PROVIDER_LABELS, loadAISettings } from "@/lib/ai-settings";
 import { loadTransparency } from "@/lib/transparency";
 import {
@@ -66,7 +66,8 @@ export function PromptHelperDialog({
 
       const providerUsed = (response.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? activeProvider;
       const data = await response.json();
-      recordLLMCall(providerUsed, "prompt_helper", providerUsed === "claude" ? 0.02 : 0);
+      const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(response.headers) : undefined;
+      recordLLMCall(providerUsed, "prompt_helper", usage?.cost ?? 0, usage);
       setGeneratedPrompt(data.prompt);
       toast.success("Prompt generated", {
         description: AI_PROVIDER_LABELS[providerUsed],
