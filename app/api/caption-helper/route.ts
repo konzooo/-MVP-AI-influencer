@@ -1,18 +1,48 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DEFAULT_TRANSPARENCY } from "@/lib/transparency";
+import { generateCaptionWithClaude } from "@/lib/claude";
+import { isAIProvider } from "@/lib/ai-settings";
+import { extractGeminiErrorMessage } from "@/lib/llm-errors";
 
 const DEFAULT_SYSTEM_PROMPT = DEFAULT_TRANSPARENCY.geminiPrompts.captionHelperPrompt;
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
-  }
-
-  const { userRequest, currentCaption, imageUrls, personaContext, systemPrompt } = await request.json();
+  const { userRequest, currentCaption, imageUrls = [], personaContext, systemPrompt, aiProvider } = await request.json();
+  const provider = isAIProvider(aiProvider) ? aiProvider : "gemini";
 
   if (!userRequest?.trim()) {
     return NextResponse.json({ error: "userRequest is required" }, { status: 400 });
+  }
+
+  if (provider === "claude") {
+    try {
+      const caption = await generateCaptionWithClaude({
+        userRequest,
+        currentCaption,
+        imageUrls: imageUrls || [],
+        personaContext,
+        systemPrompt,
+      });
+
+      return NextResponse.json(
+        { caption },
+        {
+          headers: {
+            "x-ai-provider": "claude",
+          },
+        }
+      );
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unknown error occurred" },
+        { status: 500 }
+      );
+    }
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
   }
 
   // Build the Gemini request parts
@@ -75,8 +105,7 @@ Please write a new Instagram caption based on the image(s) and request above.`;
   );
 
   if (!geminiRes.ok) {
-    const err = await geminiRes.text();
-    return NextResponse.json({ error: `Gemini error: ${err}` }, { status: 500 });
+    return NextResponse.json({ error: await extractGeminiErrorMessage(geminiRes) }, { status: 500 });
   }
 
   const geminiData = await geminiRes.json();
@@ -85,5 +114,12 @@ Please write a new Instagram caption based on the image(s) and request above.`;
   // Strip any accidental surrounding quotes
   const caption = text.trim().replace(/^["']|["']$/g, "");
 
-  return NextResponse.json({ caption });
+  return NextResponse.json(
+    { caption },
+    {
+      headers: {
+        "x-ai-provider": "gemini",
+      },
+    }
+  );
 }

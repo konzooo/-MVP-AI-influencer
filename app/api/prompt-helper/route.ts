@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DEFAULT_TRANSPARENCY } from "@/lib/transparency";
+import { generatePromptWithClaude } from "@/lib/claude";
+import { isAIProvider } from "@/lib/ai-settings";
+import { extractGeminiErrorMessage } from "@/lib/llm-errors";
 
 const DEFAULT_SYSTEM_PROMPT = DEFAULT_TRANSPARENCY.geminiPrompts.promptHelperPrompt;
 
@@ -8,6 +11,7 @@ interface PromptHelperRequest {
   currentPrompt: string;
   referenceImages: string[]; // base64 data URIs
   systemPrompt?: string;
+  aiProvider?: string;
 }
 
 interface GeminiPart {
@@ -20,21 +24,40 @@ interface GeminiPart {
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "GEMINI_API_KEY not configured" },
-        { status: 500 }
-      );
-    }
-
     const body = (await request.json()) as PromptHelperRequest;
-    const { userInput, currentPrompt, referenceImages, systemPrompt } = body;
+    const { userInput, currentPrompt, referenceImages = [], systemPrompt, aiProvider } = body;
+    const provider = isAIProvider(aiProvider) ? aiProvider : "gemini";
 
     if (!userInput.trim()) {
       return NextResponse.json(
         { error: "Please describe what you need" },
         { status: 400 }
+      );
+    }
+
+    if (provider === "claude") {
+      const prompt = await generatePromptWithClaude({
+        userInput,
+        currentPrompt,
+        referenceImages,
+        systemPrompt,
+      });
+
+      return NextResponse.json(
+        { prompt },
+        {
+          headers: {
+            "x-ai-provider": "claude",
+          },
+        }
+      );
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "GEMINI_API_KEY not configured" },
+        { status: 500 }
       );
     }
 
@@ -83,12 +106,12 @@ export async function POST(request: NextRequest) {
     );
 
     if (!response.ok) {
-      const error = await response.text();
+      const errorMessage = await extractGeminiErrorMessage(response);
       console.error("Gemini API error:", {
         status: response.status,
-        error,
+        error: errorMessage,
       });
-      throw new Error(`Gemini API error: ${response.status}`);
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
@@ -104,7 +127,14 @@ export async function POST(request: NextRequest) {
       .replace(/^#+\s+/gm, "") // Remove markdown headers
       .trim();
 
-    return NextResponse.json({ prompt: cleanPrompt });
+    return NextResponse.json(
+      { prompt: cleanPrompt },
+      {
+        headers: {
+          "x-ai-provider": "gemini",
+        },
+      }
+    );
   } catch (error) {
     console.error("Prompt helper error:", error);
     const message =

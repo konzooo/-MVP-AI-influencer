@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { recordLLMCall } from "@/lib/cost-tracker";
+import { AI_PROVIDER_LABELS, loadAISettings } from "@/lib/ai-settings";
 import { loadTransparency } from "@/lib/transparency";
 import {
   Dialog,
@@ -35,6 +36,7 @@ export function PromptHelperDialog({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedPrompt, setGeneratedPrompt] = useState("");
   const [copied, setCopied] = useState(false);
+  const activeProvider = loadAISettings().promptHelper;
 
   const handleGenerate = async () => {
     if (!userInput.trim()) return;
@@ -53,6 +55,7 @@ export function PromptHelperDialog({
           currentPrompt,
           referenceImages,
           systemPrompt,
+          aiProvider: activeProvider,
         }),
       });
 
@@ -61,10 +64,13 @@ export function PromptHelperDialog({
         throw new Error(data.error || "Failed to generate prompt");
       }
 
+      const providerUsed = (response.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? activeProvider;
       const data = await response.json();
-      recordLLMCall("gemini", "prompt_helper");
+      recordLLMCall(providerUsed, "prompt_helper", providerUsed === "claude" ? 0.02 : 0);
       setGeneratedPrompt(data.prompt);
-      toast.success("Prompt generated!");
+      toast.success("Prompt generated", {
+        description: AI_PROVIDER_LABELS[providerUsed],
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to generate prompt");
     } finally {
@@ -106,6 +112,13 @@ export function PromptHelperDialog({
         </DialogHeader>
 
         <div className="space-y-4 overflow-hidden">
+          <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Active model</span>
+            <span className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-[10px] text-zinc-300">
+              {AI_PROVIDER_LABELS[activeProvider]}
+            </span>
+          </div>
+
           {/* Context preview */}
           <div className="space-y-2">
             <label className="text-xs font-medium text-zinc-400">Context</label>
@@ -113,6 +126,7 @@ export function PromptHelperDialog({
               <div className="flex items-center gap-3">
                 <div className="flex gap-2">
                   {referenceImages.slice(0, 3).map((img, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       key={i}
                       src={img}

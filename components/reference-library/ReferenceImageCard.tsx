@@ -11,8 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Copy, MapPin, Camera, Clock, Palette, Smile, Edit2, Save, X, Loader2, Sparkles } from "lucide-react";
-import type { ReferenceImage, ReferenceImageMetadata } from "@/lib/types";
+import { Copy, MapPin, Camera, Clock, Smile, Edit2, Save, X, Loader2, Sparkles } from "lucide-react";
+import type { ReferenceImage } from "@/lib/types";
 
 interface ReferenceImageCardProps {
   image: ReferenceImage;
@@ -20,6 +20,22 @@ interface ReferenceImageCardProps {
   selectable?: boolean;
   selected?: boolean;
 }
+
+type EditData = {
+  summary: string;
+  tags: string[];
+  indoor_outdoor: ReferenceImage["metadata"]["indoor_outdoor"];
+  place_type: string;
+  place_detail: string;
+  capture_method: ReferenceImage["metadata"]["capture_method"];
+  framing: ReferenceImage["metadata"]["framing"];
+  expression_type: ReferenceImage["metadata"]["expression"]["type"];
+  expression_mouth: ReferenceImage["metadata"]["expression"]["mouth"];
+  expression_detail: string;
+  time_of_day: ReferenceImage["metadata"]["time_of_day"];
+  image_style_color: ReferenceImage["metadata"]["image_style"]["color"];
+  image_style_detail: string;
+};
 
 export function ReferenceImageCard({
   image,
@@ -34,7 +50,7 @@ export function ReferenceImageCard({
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const [editData, setEditData] = useState({
+  const [editData, setEditData] = useState<EditData>({
     summary: image.summary,
     tags: image.tags,
     indoor_outdoor: image.metadata.indoor_outdoor,
@@ -76,17 +92,17 @@ export function ReferenceImageCard({
           tags: editData.tags,
           metadata: {
             schema_version: image.metadata.schema_version,
-            indoor_outdoor: editData.indoor_outdoor as any,
+            indoor_outdoor: editData.indoor_outdoor,
             place: { type: editData.place_type, detail: editData.place_detail },
-            capture_method: editData.capture_method as any,
-            framing: editData.framing as any,
+            capture_method: editData.capture_method,
+            framing: editData.framing,
             expression: {
-              type: editData.expression_type as any,
-              mouth: editData.expression_mouth as any,
+              type: editData.expression_type,
+              mouth: editData.expression_mouth,
               detail: editData.expression_detail,
             },
-            time_of_day: editData.time_of_day as any,
-            image_style: { color: editData.image_style_color as any, detail: editData.image_style_detail },
+            time_of_day: editData.time_of_day,
+            image_style: { color: editData.image_style_color, detail: editData.image_style_detail },
           },
         }),
       });
@@ -369,7 +385,12 @@ export function ReferenceImageCard({
                 <div className="space-y-4">
                   <div>
                     <label className="text-xs text-zinc-500">Indoor/Outdoor</label>
-                    <Select value={editData.indoor_outdoor} onValueChange={(v) => setEditData({ ...editData, indoor_outdoor: v as any })}>
+                    <Select
+                      value={editData.indoor_outdoor}
+                      onValueChange={(v) =>
+                        setEditData({ ...editData, indoor_outdoor: v as EditData["indoor_outdoor"] })
+                      }
+                    >
                       <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>
@@ -393,7 +414,12 @@ export function ReferenceImageCard({
 
                   <div>
                     <label className="text-xs text-zinc-500">Capture Method</label>
-                    <Select value={editData.capture_method} onValueChange={(v) => setEditData({ ...editData, capture_method: v as any })}>
+                    <Select
+                      value={editData.capture_method}
+                      onValueChange={(v) =>
+                        setEditData({ ...editData, capture_method: v as EditData["capture_method"] })
+                      }
+                    >
                       <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>
@@ -407,7 +433,12 @@ export function ReferenceImageCard({
 
                   <div>
                     <label className="text-xs text-zinc-500">Framing</label>
-                    <Select value={editData.framing} onValueChange={(v) => setEditData({ ...editData, framing: v as any })}>
+                    <Select
+                      value={editData.framing}
+                      onValueChange={(v) =>
+                        setEditData({ ...editData, framing: v as EditData["framing"] })
+                      }
+                    >
                       <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>
@@ -422,7 +453,12 @@ export function ReferenceImageCard({
 
                   <div>
                     <label className="text-xs text-zinc-500">Expression</label>
-                    <Select value={editData.expression_type} onValueChange={(v) => setEditData({ ...editData, expression_type: v as any })}>
+                    <Select
+                      value={editData.expression_type}
+                      onValueChange={(v) =>
+                        setEditData({ ...editData, expression_type: v as EditData["expression_type"] })
+                      }
+                    >
                       <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>
@@ -438,7 +474,12 @@ export function ReferenceImageCard({
 
                   <div>
                     <label className="text-xs text-zinc-500">Mouth</label>
-                    <Select value={editData.expression_mouth} onValueChange={(v) => setEditData({ ...editData, expression_mouth: v as any })}>
+                    <Select
+                      value={editData.expression_mouth}
+                      onValueChange={(v) =>
+                        setEditData({ ...editData, expression_mouth: v as EditData["expression_mouth"] })
+                      }
+                    >
                       <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>
@@ -451,7 +492,12 @@ export function ReferenceImageCard({
 
                   <div>
                     <label className="text-xs text-zinc-500">Time of Day</label>
-                    <Select value={editData.time_of_day} onValueChange={(v) => setEditData({ ...editData, time_of_day: v as any })}>
+                    <Select
+                      value={editData.time_of_day}
+                      onValueChange={(v) =>
+                        setEditData({ ...editData, time_of_day: v as EditData["time_of_day"] })
+                      }
+                    >
                       <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>
@@ -467,7 +513,12 @@ export function ReferenceImageCard({
 
                   <div>
                     <label className="text-xs text-zinc-500">Image Style Color</label>
-                    <Select value={editData.image_style_color} onValueChange={(v) => setEditData({ ...editData, image_style_color: v as any })}>
+                    <Select
+                      value={editData.image_style_color}
+                      onValueChange={(v) =>
+                        setEditData({ ...editData, image_style_color: v as EditData["image_style_color"] })
+                      }
+                    >
                       <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>

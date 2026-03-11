@@ -420,11 +420,12 @@ export async function runTask(
     const personaContext = identity.isActive
       ? (await import("./identity")).buildPersonaContext(identity)
       : undefined;
+    const aiSettings = loadAISettings();
 
     if (selectedItem.type === "own_image") {
       if (selectedItem.postType === "carousel") {
         // POST /api/expand-carousel
-        log.add(`Calling expand-carousel API for user image...`);
+        log.add(`Calling expand-carousel API for user image (using ${aiSettings.expandCarousel})...`);
         const expandRes = await fetch("/api/expand-carousel", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -432,7 +433,8 @@ export async function runTask(
             image: selectedItem.imageUrls[0],
             notes: selectedItem.notes,
             personaContext,
-            carouselStyle: loadAISettings().carouselStyle,
+            carouselStyle: aiSettings.carouselStyle,
+            aiProvider: aiSettings.expandCarousel,
           }),
         });
 
@@ -443,8 +445,9 @@ export async function runTask(
           return result;
         }
 
+        const providerUsed = (expandRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.expandCarousel;
         const expandPlan = await expandRes.json();
-        recordLLMCall("gemini", "expand_carousel");
+        recordLLMCall(providerUsed, "expand_carousel", providerUsed === "claude" ? 0.02 : 0);
         post = createEmptyPost("from_own_images", "carousel");
         Object.assign(post, expandPlan);
         post.status = "approved"; // needs generation for slides 2-3
@@ -454,7 +457,7 @@ export async function runTask(
         // for companion slides via slide0GeneratedUrl cascading.
 
         log.add(
-          `Expand carousel complete: "${post.title}" with ${post.imagePrompts.length} prompts`
+          `Expand carousel complete via ${providerUsed}: "${post.title}" with ${post.imagePrompts.length} prompts`
         );
 
         // Prepend user's image as first generated image (userProvided)
@@ -475,7 +478,7 @@ export async function runTask(
         });
       } else {
         // POST /api/analyze-images (single or story)
-        log.add(`Calling analyze-images API for user image...`);
+        log.add(`Calling analyze-images API for user image (using ${aiSettings.analyzeImages})...`);
         const analyzeRes = await fetch("/api/analyze-images", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -483,6 +486,7 @@ export async function runTask(
             images: selectedItem.imageUrls,
             notes: selectedItem.notes,
             personaContext,
+            aiProvider: aiSettings.analyzeImages,
           }),
         });
 
@@ -493,12 +497,13 @@ export async function runTask(
           return result;
         }
 
+        const providerUsed = (analyzeRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.analyzeImages;
         const analyzePlan = await analyzeRes.json();
-        recordLLMCall("gemini", "analyze_images");
+        recordLLMCall(providerUsed, "analyze_images", providerUsed === "claude" ? 0.02 : 0);
         post = createEmptyPost("from_own_images", selectedItem.postType);
         Object.assign(post, analyzePlan);
         post.status = "ready"; // skips generation — own images are final
-        log.add(`Analyze complete: "${post.title}"`);
+        log.add(`Analyze complete via ${providerUsed}: "${post.title}"`);
 
         // Add user's images as generated images (userProvided)
         post.generatedImages = selectedItem.imageUrls.map((url, idx) => ({
@@ -519,7 +524,7 @@ export async function runTask(
       }
     } else if (selectedItem.type === "copy_post") {
       // POST /api/brainstorm (copy_post mode)
-      log.add(`Calling brainstorm API in copy_post mode...`);
+      log.add(`Calling brainstorm API in copy_post mode (using ${aiSettings.brainstormCopyPost})...`);
       const brainstormRes = await fetch("/api/brainstorm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -529,6 +534,8 @@ export async function runTask(
           creationMode: "copy_post",
           postType: selectedItem.postType,
           personaContext,
+          aiProvider: aiSettings.brainstormCopyPost,
+          carouselStyle: aiSettings.carouselStyle,
         }),
       });
 
@@ -539,7 +546,7 @@ export async function runTask(
         return result;
       }
 
-      const providerUsed = (brainstormRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? "gemini";
+      const providerUsed = (brainstormRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.brainstormCopyPost;
       const brainstormPlan = await brainstormRes.json();
       recordLLMCall(providerUsed, "brainstorm", providerUsed === "claude" ? 0.02 : 0);
       post = createEmptyPost("copy_post", selectedItem.postType);
@@ -555,7 +562,6 @@ export async function runTask(
         selectedItem as FromScratchInspirationItem,
         identity
       );
-      const aiSettings = loadAISettings();
       log.add(`Calling brainstorm API in from_scratch mode (using ${aiSettings.brainstormFromScratch})...`);
       const brainstormRes = await fetch("/api/brainstorm", {
         method: "POST",

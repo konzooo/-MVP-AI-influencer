@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { recordLLMCall } from "@/lib/cost-tracker";
+import { AI_PROVIDER_LABELS, loadAISettings } from "@/lib/ai-settings";
 import { buildPersonaContext, loadIdentity } from "@/lib/identity";
 import { loadTransparency } from "@/lib/transparency";
 import {
@@ -36,6 +37,7 @@ export function CaptionHelperDialog({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedCaption, setGeneratedCaption] = useState("");
   const [copied, setCopied] = useState(false);
+  const activeProvider = loadAISettings().captionHelper;
 
   const handleGenerate = async () => {
     if (!userRequest.trim()) return;
@@ -57,6 +59,7 @@ export function CaptionHelperDialog({
           imageUrls,
           personaContext,
           systemPrompt,
+          aiProvider: activeProvider,
         }),
       });
 
@@ -65,9 +68,13 @@ export function CaptionHelperDialog({
         throw new Error(data.error || "Failed to generate caption");
       }
 
+      const providerUsed = (res.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? activeProvider;
       const data = await res.json();
-      recordLLMCall("gemini", "caption_helper");
+      recordLLMCall(providerUsed, "caption_helper", providerUsed === "claude" ? 0.02 : 0);
       setGeneratedCaption(data.caption);
+      toast.success("Caption generated", {
+        description: AI_PROVIDER_LABELS[providerUsed],
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to generate caption");
     } finally {
@@ -108,10 +115,18 @@ export function CaptionHelperDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Active model</span>
+            <span className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-[10px] text-zinc-300">
+              {AI_PROVIDER_LABELS[activeProvider]}
+            </span>
+          </div>
+
           {/* Images preview */}
           {imageUrls.length > 0 && (
             <div className="flex gap-2">
               {imageUrls.slice(0, 4).map((url, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   key={i}
                   src={url}

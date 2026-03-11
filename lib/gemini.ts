@@ -1,6 +1,7 @@
 import { CreationMode, PostType } from "./types";
 import { DEFAULT_TRANSPARENCY, resolveCarouselStyle } from "./transparency";
 import type { CarouselStyle } from "./ai-settings";
+import { extractGeminiErrorMessage } from "./llm-errors";
 
 // ─── System Prompts — single source of truth is lib/transparency.ts ──────────
 // Edit prompts there; this file imports them so the transparency page always
@@ -69,12 +70,9 @@ async function geminiRequest(
   clearTimeout(timeout);
 
   if (!response.ok) {
-    const error = await response.text();
-    console.error("[Gemini] API error:", { status: response.status, error: error.slice(0, 300) });
-    if (response.status === 429) {
-      throw new Error("Gemini API rate limit exceeded — wait a minute and try again");
-    }
-    throw new Error(`Gemini API error: ${response.status} - ${error}`);
+    const errorMessage = await extractGeminiErrorMessage(response);
+    console.error("[Gemini] API error:", { status: response.status, error: errorMessage.slice(0, 300) });
+    throw new Error(errorMessage);
   }
 
   return response;

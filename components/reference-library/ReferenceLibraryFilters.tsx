@@ -68,10 +68,12 @@ export function ReferenceLibraryFilters({
       {/* Filter Row */}
       {showMetadataFilters && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-          <Select 
-            value={filters.indoorOutdoor} 
-            onValueChange={(value) => updateFilter("indoorOutdoor", value as any)}
-          >
+        <Select 
+          value={filters.indoorOutdoor} 
+          onValueChange={(value) =>
+            updateFilter("indoorOutdoor", value as ReferenceLibraryFilters["indoorOutdoor"])
+          }
+        >
             <SelectTrigger>
               <SelectValue placeholder="Location" />
             </SelectTrigger>
@@ -82,10 +84,12 @@ export function ReferenceLibraryFilters({
             </SelectContent>
           </Select>
 
-          <Select 
-            value={filters.captureMethod} 
-            onValueChange={(value) => updateFilter("captureMethod", value as any)}
-          >
+        <Select 
+          value={filters.captureMethod} 
+          onValueChange={(value) =>
+            updateFilter("captureMethod", value as ReferenceLibraryFilters["captureMethod"])
+          }
+        >
             <SelectTrigger>
               <SelectValue placeholder="Capture" />
             </SelectTrigger>
@@ -97,10 +101,12 @@ export function ReferenceLibraryFilters({
             </SelectContent>
           </Select>
 
-          <Select 
-            value={filters.framing} 
-            onValueChange={(value) => updateFilter("framing", value as any)}
-          >
+        <Select 
+          value={filters.framing} 
+          onValueChange={(value) =>
+            updateFilter("framing", value as ReferenceLibraryFilters["framing"])
+          }
+        >
             <SelectTrigger>
               <SelectValue placeholder="Framing" />
             </SelectTrigger>
@@ -113,10 +119,12 @@ export function ReferenceLibraryFilters({
             </SelectContent>
           </Select>
 
-          <Select 
-            value={filters.expression} 
-            onValueChange={(value) => updateFilter("expression", value as any)}
-          >
+        <Select 
+          value={filters.expression} 
+          onValueChange={(value) =>
+            updateFilter("expression", value as ReferenceLibraryFilters["expression"])
+          }
+        >
             <SelectTrigger>
               <SelectValue placeholder="Expression" />
             </SelectTrigger>
@@ -129,10 +137,12 @@ export function ReferenceLibraryFilters({
             </SelectContent>
           </Select>
 
-          <Select 
-            value={filters.timeOfDay} 
-            onValueChange={(value) => updateFilter("timeOfDay", value as any)}
-          >
+        <Select 
+          value={filters.timeOfDay} 
+          onValueChange={(value) =>
+            updateFilter("timeOfDay", value as ReferenceLibraryFilters["timeOfDay"])
+          }
+        >
             <SelectTrigger>
               <SelectValue placeholder="Time" />
             </SelectTrigger>

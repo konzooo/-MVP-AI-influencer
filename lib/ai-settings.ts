@@ -1,5 +1,3 @@
-"use client";
-
 export type AIProvider = "gemini" | "claude";
 export const AI_PROVIDERS = ["gemini", "claude"] as const;
 export const AI_PROVIDER_LABELS: Record<AIProvider, string> = {

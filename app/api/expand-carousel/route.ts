@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { expandOwnImageForCarousel } from "@/lib/gemini";
+import { expandOwnImageForCarouselWithClaude } from "@/lib/claude";
+import { isAIProvider } from "@/lib/ai-settings";
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "GEMINI_API_KEY not configured. Add it to .env.local" },
-        { status: 500 }
-      );
-    }
-
-    const { image, notes, personaContext, carouselStyle } = await request.json();
+    const { image, notes, personaContext, carouselStyle, aiProvider } = await request.json();
+    const provider = isAIProvider(aiProvider) ? aiProvider : "gemini";
 
     if (!image) {
       return NextResponse.json(
@@ -20,8 +15,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (provider === "claude") {
+      const result = await expandOwnImageForCarouselWithClaude(image, notes || "", personaContext, carouselStyle);
+      return NextResponse.json(result, {
+        headers: {
+          "x-ai-provider": "claude",
+        },
+      });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "GEMINI_API_KEY not configured. Add it to .env.local" },
+        { status: 500 }
+      );
+    }
+
     const result = await expandOwnImageForCarousel(image, notes || "", apiKey, personaContext, carouselStyle);
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: {
+        "x-ai-provider": "gemini",
+      },
+    });
   } catch (error) {
     console.error("Expand carousel error:", error);
     const message =

@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ReferenceImageCard } from "@/components/reference-library/ReferenceImageCard";
 import { ReferenceLibraryFilters } from "@/components/reference-library/ReferenceLibraryFilters";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { loadGeneratedImageLibrary, GENERATED_IMAGE_LIBRARY_UPDATED_EVENT, isGeneratedImageLibraryStorageEvent } from "@/lib/generated-image-library";
+import {
+  loadGeneratedImageLibrary,
+  GENERATED_IMAGE_LIBRARY_UPDATED_EVENT,
+  isGeneratedImageLibraryStorageEvent,
+} from "@/lib/generated-image-library";
 import { Images, Loader2, AlertCircle, Sparkles } from "lucide-react";
 import type { ReferenceImage, ReferenceLibraryFilters as FiltersType } from "@/lib/types";
 
@@ -45,11 +49,36 @@ export function ReferenceLibraryBrowser({
     timeOfDay: "all"
   });
 
+  const loadReferenceImages = useCallback(async () => {
+    try {
+      setReferenceLoading(true);
+      setReferenceError(null);
+
+      const response = await fetch("/api/reference-images");
+      if (!response.ok) {
+        throw new Error("Failed to load reference images");
+      }
+
+      const data = await response.json();
+      setReferenceImages(data.images || data || []);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "An error occurred";
+      setReferenceError(msg);
+      toast.error(msg);
+    } finally {
+      setReferenceLoading(false);
+    }
+  }, []);
+
+  const loadGeneratedImages = useCallback(() => {
+    setGeneratedImages(loadGeneratedImageLibrary());
+  }, []);
+
   // Load images on mount
   useEffect(() => {
     loadReferenceImages();
     loadGeneratedImages();
-  }, []);
+  }, [loadGeneratedImages, loadReferenceImages]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -71,34 +100,7 @@ export function ReferenceLibraryBrowser({
       window.removeEventListener(GENERATED_IMAGE_LIBRARY_UPDATED_EVENT, handleGeneratedLibraryUpdate);
       window.removeEventListener("storage", handleStorage);
     };
-  }, []);
-
-  const loadReferenceImages = async () => {
-    try {
-      setReferenceLoading(true);
-      setReferenceError(null);
-
-      const response = await fetch("/api/reference-images");
-      if (!response.ok) {
-        throw new Error("Failed to load reference images");
-      }
-
-      const data = await response.json();
-      setReferenceImages(data.images || data || []);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "An error occurred";
-      setReferenceError(msg);
-      if (activeTab === "reference") {
-        toast.error(msg);
-      }
-    } finally {
-      setReferenceLoading(false);
-    }
-  };
-
-  const loadGeneratedImages = () => {
-    setGeneratedImages(loadGeneratedImageLibrary());
-  };
+  }, [loadGeneratedImages]);
 
   const images = activeTab === "reference" ? referenceImages : generatedImages;
   const hasMetadataFilters = activeTab === "reference";
@@ -220,14 +222,24 @@ export function ReferenceLibraryBrowser({
       {/* Scrollable content - filters, button, and grid */}
       <ScrollArea className="flex-1 min-h-0">
         <div className="p-6">
-          <div className="mb-6">
-            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "reference" | "generated")}>
-              <TabsList className="grid w-full grid-cols-2 rounded-xl bg-zinc-950 p-1">
-                <TabsTrigger value="reference" className="gap-2 rounded-lg data-[state=active]:bg-zinc-900">
+          <div className="mb-6 px-4">
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as "reference" | "generated")}
+              className="w-full"
+            >
+              <TabsList className="grid h-14 w-full grid-cols-2 overflow-hidden rounded-sm bg-zinc-950/60 p-0">
+                <TabsTrigger
+                  value="reference"
+                  className="h-full w-full gap-2 rounded-none border-0 bg-transparent text-[15px] font-medium text-zinc-500 data-[state=active]:border-transparent data-[state=active]:bg-zinc-900/95 data-[state=active]:text-zinc-100 data-[state=active]:shadow-none"
+                >
                   <Images className="h-4 w-4" />
                   Reference Images
                 </TabsTrigger>
-                <TabsTrigger value="generated" className="gap-2 rounded-lg data-[state=active]:bg-zinc-900">
+                <TabsTrigger
+                  value="generated"
+                  className="h-full w-full gap-2 rounded-none border-0 bg-transparent text-[15px] font-medium text-zinc-500 data-[state=active]:border-transparent data-[state=active]:bg-zinc-900/95 data-[state=active]:text-zinc-100 data-[state=active]:shadow-none"
+                >
                   <Sparkles className="h-4 w-4" />
                   Generated Images
                 </TabsTrigger>

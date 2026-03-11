@@ -3,7 +3,7 @@
 import { PostPlan, CreationMode, PostType, createEmptyPost } from "./types";
 import { savePost } from "./store";
 import { loadIdentity, buildPersonaContext } from "./identity";
-import { loadAISettings } from "./ai-settings";
+import { loadAISettings, type AIProvider, type CarouselStyle } from "./ai-settings";
 import { selectCharacterReference, buildContextFromKeywords } from "./reference-selector";
 import { recordLLMCall } from "./cost-tracker";
 import type { ReferenceImage } from "./types";
@@ -30,7 +30,15 @@ export async function brainstormPost(params: {
 
   if (creationMode === "from_own_images") {
     console.log("[brainstormPost] Starting from_own_images flow");
-    return brainstormOwnImages({ idea, images, postType, personaContext, carouselStyle: aiSettings.carouselStyle });
+    return brainstormOwnImages({
+      idea,
+      images,
+      postType,
+      personaContext,
+      carouselStyle: aiSettings.carouselStyle,
+      analyzeImagesProvider: aiSettings.analyzeImages,
+      expandCarouselProvider: aiSettings.expandCarousel,
+    });
   }
 
   // Normal brainstorm flow (from_scratch or copy_post)
@@ -150,9 +158,19 @@ async function brainstormOwnImages(params: {
   images: string[];
   postType: PostType;
   personaContext?: string;
-  carouselStyle?: string;
+  carouselStyle?: CarouselStyle;
+  analyzeImagesProvider: AIProvider;
+  expandCarouselProvider: AIProvider;
 }): Promise<PostPlan> {
-  const { idea, images, postType, personaContext, carouselStyle } = params;
+  const {
+    idea,
+    images,
+    postType,
+    personaContext,
+    carouselStyle,
+    analyzeImagesProvider,
+    expandCarouselProvider,
+  } = params;
 
   console.log("[brainstormOwnImages] Starting", { postType, numImages: images.length });
 
@@ -162,7 +180,13 @@ async function brainstormOwnImages(params: {
     const expandResponse = await fetch("/api/expand-carousel", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image: images[0], notes: idea, personaContext, carouselStyle }),
+      body: JSON.stringify({
+        image: images[0],
+        notes: idea,
+        personaContext,
+        carouselStyle,
+        aiProvider: expandCarouselProvider,
+      }),
     });
 
     if (!expandResponse.ok) {
@@ -170,8 +194,9 @@ async function brainstormOwnImages(params: {
       throw new Error(data.error || "Failed to generate carousel plan");
     }
 
+    const providerUsed = (expandResponse.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? expandCarouselProvider;
     const result = await expandResponse.json();
-    recordLLMCall("gemini", "expand_carousel");
+    recordLLMCall(providerUsed, "expand_carousel", providerUsed === "claude" ? 0.02 : 0);
 
     // Upload user image to FAL storage before saving (base64 is too large for localStorage)
     const uploadedUrls = await uploadImages([images[0]]);
@@ -226,7 +251,12 @@ async function brainstormOwnImages(params: {
   const response = await fetch("/api/analyze-images", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ images, notes: idea, personaContext }),
+    body: JSON.stringify({
+      images,
+      notes: idea,
+      personaContext,
+      aiProvider: analyzeImagesProvider,
+    }),
   });
 
   if (!response.ok) {
@@ -234,8 +264,9 @@ async function brainstormOwnImages(params: {
     throw new Error(data.error || "Failed to analyze images");
   }
 
+  const providerUsed = (response.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? analyzeImagesProvider;
   const result = await response.json();
-  recordLLMCall("gemini", "analyze_images");
+  recordLLMCall(providerUsed, "analyze_images", providerUsed === "claude" ? 0.02 : 0);
 
   // Upload user images to FAL storage before saving (base64 is too large for localStorage)
   const uploadedUrls = await uploadImages(images);
