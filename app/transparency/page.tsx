@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { buildCaptionStyleContext, loadIdentity } from "@/lib/identity";
 import { Copy, ChevronDown, ChevronRight } from "lucide-react";
 import {
   loadTransparency,
@@ -35,6 +37,9 @@ export default function TransparencyPage() {
       </div>
     );
   }
+
+  const identity = loadIdentity();
+  const liveCaptionStyle = buildCaptionStyleContext(identity);
 
   const handleSave = () => {
     if (data) {
@@ -393,6 +398,111 @@ export default function TransparencyPage() {
                       Higher temperature = more creative/random. Lower = more consistent.
                     </p>
                   </div>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card className="border-zinc-800 bg-zinc-900/50 overflow-hidden">
+            <SectionHeader section="prompt-helper" title="Prompt Helper Prompt" />
+            {expandedSections["prompt-helper"] && (
+              <div className="border-t border-zinc-800 p-4 space-y-3">
+                <p className="text-xs text-zinc-400">
+                  Used when refining an image prompt in the post editor with the Prompt Helper. Editing this prompt changes what the helper sends to Gemini immediately.
+                </p>
+                {isEditMode ? (
+                  <Textarea
+                    value={data.geminiPrompts.promptHelperPrompt}
+                    onChange={(e) =>
+                      setData({
+                        ...data,
+                        geminiPrompts: {
+                          ...data.geminiPrompts,
+                          promptHelperPrompt: e.target.value,
+                        },
+                      })
+                    }
+                    className="min-h-[320px] border-zinc-700 bg-zinc-900 text-zinc-100 font-mono text-xs"
+                  />
+                ) : (
+                  <div className="relative">
+                    <pre className="bg-zinc-950 p-3 rounded text-xs text-zinc-300 whitespace-pre-wrap break-words overflow-x-auto max-h-[320px] overflow-y-auto">
+                      {data.geminiPrompts.promptHelperPrompt}
+                    </pre>
+                    <button
+                      onClick={() => copyToClipboard(data.geminiPrompts.promptHelperPrompt)}
+                      className="absolute top-2 right-2 p-2 hover:bg-zinc-900 rounded transition-colors"
+                    >
+                      <Copy className="h-3.5 w-3.5 text-zinc-500 hover:text-zinc-300" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+
+          <Card className="border-zinc-800 bg-zinc-900/50 overflow-hidden">
+            <SectionHeader section="caption-helper" title="Caption Helper Prompt" />
+            {expandedSections["caption-helper"] && (
+              <div className="border-t border-zinc-800 p-4 space-y-4">
+                <p className="text-xs text-zinc-400">
+                  Used when refining a caption in the post editor with the AI Helper. Editing the system prompt below changes what the helper sends to Gemini immediately, and Gemini also receives the live caption style from your Identity profile.
+                </p>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-zinc-400">System Prompt</p>
+                  </div>
+                  {isEditMode ? (
+                    <Textarea
+                      value={data.geminiPrompts.captionHelperPrompt}
+                      onChange={(e) =>
+                        setData({
+                          ...data,
+                          geminiPrompts: {
+                            ...data.geminiPrompts,
+                            captionHelperPrompt: e.target.value,
+                          },
+                        })
+                      }
+                      className="min-h-[240px] border-zinc-700 bg-zinc-900 text-zinc-100 font-mono text-xs"
+                    />
+                  ) : (
+                    <div className="relative">
+                      <pre className="bg-zinc-950 p-3 rounded text-xs text-zinc-300 whitespace-pre-wrap break-words overflow-x-auto max-h-[240px] overflow-y-auto">
+                        {data.geminiPrompts.captionHelperPrompt}
+                      </pre>
+                      <button
+                        onClick={() => copyToClipboard(data.geminiPrompts.captionHelperPrompt)}
+                        className="absolute top-2 right-2 p-2 hover:bg-zinc-900 rounded transition-colors"
+                      >
+                        <Copy className="h-3.5 w-3.5 text-zinc-500 hover:text-zinc-300" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-zinc-400">Live Caption Style From Identity</p>
+                    <Link
+                      href="/identity"
+                      className="text-xs font-medium text-violet-400 transition-colors hover:text-violet-300"
+                    >
+                      Edit Voice & Tone
+                    </Link>
+                  </div>
+                  <pre className="bg-zinc-950 p-3 rounded text-xs text-zinc-300 whitespace-pre-wrap break-words overflow-x-auto max-h-[220px] overflow-y-auto">
+                    {liveCaptionStyle}
+                  </pre>
+                  <div className="rounded-md border border-zinc-800 bg-zinc-950/60 p-3 text-xs text-zinc-400">
+                    Gemini also receives the current caption, the user&apos;s natural-language request, selected images, and persona context containing this caption style block.
+                  </div>
+                  {!identity.isActive && (
+                    <p className="text-[11px] text-amber-400">
+                      Identity is currently inactive, so this caption style block is shown for transparency but is not prepended until the profile is active again.
+                    </p>
+                  )}
                 </div>
               </div>
             )}

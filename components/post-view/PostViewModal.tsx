@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { PostPlan, ReferenceImage, ImagePrompt } from "@/lib/types";
 import { Task } from "@/lib/task-types";
-import { loadPosts, savePost } from "@/lib/store";
+import { deletePost, loadPosts, savePost } from "@/lib/store";
 import { usePostActions } from "@/hooks/use-post-actions";
 import { useInstagramAccount } from "@/hooks/use-instagram-account";
 import { canPublish as checkRateLimit } from "@/lib/instagram-rate-limit";
@@ -43,6 +43,7 @@ import {
 } from "@/components/image-generation/GenerationControls";
 import { ImageDropZone } from "@/components/ui/ImageDropZone";
 import { ReferenceLibraryDialog } from "@/components/reference-library/ReferenceLibraryDialog";
+import { loadGeneratedImageLibrary } from "@/lib/generated-image-library";
 import {
   ChevronDown,
   ChevronRight,
@@ -71,6 +72,7 @@ import {
   Trash2,
   Library,
   Plus,
+  PenTool,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -80,6 +82,11 @@ const CREATION_MODE_CONFIG: Record<
   string,
   { label: string; icon: React.ReactNode; className: string }
 > = {
+  manual: {
+    label: "Manual",
+    icon: <PenTool className="mr-0.5 h-2.5 w-2.5" />,
+    className: "border-amber-800 bg-amber-950/40 text-amber-300",
+  },
   copy_post: {
     label: "Copy Post",
     icon: <Copy className="mr-0.5 h-2.5 w-2.5" />,
@@ -133,6 +140,7 @@ export function PostViewModal({
 
   // Prompt editing state
   const [editingPrompts, setEditingPrompts] = useState<ImagePrompt[]>([]);
+  const [editingTitle, setEditingTitle] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
   const [editingCaption, setEditingCaption] = useState(false);
   const [promptEditMode, setPromptEditMode] = useState(false);
@@ -210,9 +218,10 @@ export function PostViewModal({
     setCaption(post.caption);
     setHashtagsText(post.hashtags.join(", "));
     setCaptionDirty(false);
+    setEditingTitle(false);
     setEditingDescription(false);
     setEditingCaption(false);
-    setPromptEditMode(false);
+    setPromptEditMode(post.creationMode === "manual");
   }, [post?.id, post?.status]);
 
   // Clear lightbox when modal closes
@@ -237,52 +246,108 @@ export function PostViewModal({
   // Load reference library
   useEffect(() => {
     if (!open || !post) return;
-    const needsLibRef =
+    const hasEditableRefs =
+      post.creationMode === "manual" ||
       post.creationMode === "copy_post" ||
-      post.creationMode === "from_scratch";
-    if (!needsLibRef) {
+      post.creationMode === "from_scratch" ||
+      (post.creationMode === "from_own_images" && post.postType === "carousel");
+    if (!hasEditableRefs) {
       setSelectedRefs([]);
       return;
     }
 
     setRefLoading(true);
+    const generatedRefs = loadGeneratedImageLibrary();
+
+    const resolveStoredRefs = (allRefs: ReferenceImage[]) => {
+      if (post.characterRefs && post.characterRefs.length > 0) {
+        return post.characterRefs
+          .map((cr) => {
+            if (cr.id.startsWith("upload-")) {
+              return {
+                id: cr.id,
+                filename: "uploaded",
+                imagePath: cr.path,
+                thumbnailPath: cr.path,
+                summary: "Uploaded image",
+                tags: [],
+                metadata: { schema_version: "1", indoor_outdoor: "unknown", place: { type: "unknown", detail: "" }, capture_method: "front_selfie", framing: "chest_up", expression: { type: "neutral", mouth: "closed", detail: "" }, time_of_day: "unknown", image_style: { color: "color", detail: "" } },
+                createdAt: new Date().toISOString(),
+              } as ReferenceImage;
+            }
+
+            return allRefs.find((r) => r.id === cr.id) ?? allRefs.find((r) => r.imagePath === cr.path);
+          })
+          .filter(Boolean) as ReferenceImage[];
+      }
+
+      if (post.selectedCharacterRefId) {
+        const stored = allRefs.find((r) => r.id === post.selectedCharacterRefId);
+        return stored ? [stored] : [];
+      }
+
+      return null;
+    };
+
     fetch("/api/reference-images")
       .then((res) => res.json())
       .then((data) => {
         const refs: ReferenceImage[] = data.images || [];
+        const allRefs = [...generatedRefs, ...refs];
 
-        // Load stored refs: new array format or legacy single
-        if (post.characterRefs && post.characterRefs.length > 0) {
-          const stored = post.characterRefs
-            .map((cr) => {
-              // Uploaded refs (base64 path) — reconstruct ReferenceImage
-              if (cr.id.startsWith("upload-")) {
-                return {
-                  id: cr.id,
-                  filename: "uploaded",
-                  imagePath: cr.path,
-                  thumbnailPath: cr.path,
-                  summary: "Uploaded image",
-                  tags: [],
-                  metadata: { schema_version: "1", indoor_outdoor: "unknown", place: { type: "unknown", detail: "" }, capture_method: "front_selfie", framing: "chest_up", expression: { type: "neutral", mouth: "closed", detail: "" }, time_of_day: "unknown", image_style: { color: "color", detail: "" } },
-                  createdAt: new Date().toISOString(),
-                } as ReferenceImage;
-              }
-              // Library refs — find by ID
-              return refs.find((r) => r.id === cr.id);
-            })
-            .filter(Boolean) as ReferenceImage[];
-          setSelectedRefs(stored);
-        } else if (post.selectedCharacterRefId) {
-          // Legacy single ref migration
-          const stored = refs.find((r) => r.id === post.selectedCharacterRefId);
-          setSelectedRefs(stored ? [stored] : []);
+        const storedRefs = resolveStoredRefs(allRefs);
+        if (storedRefs) {
+          setSelectedRefs(storedRefs);
+        } else if (
+          post.creationMode === "from_own_images" &&
+          post.postType === "carousel" &&
+          post.characterRefs === undefined
+        ) {
+          const ownImage =
+            post.generatedImages.find(
+              (img) => img.userProvided && img.promptIndex === 0
+            ) ?? post.generatedImages.find((img) => img.userProvided);
+
+          if (ownImage?.url) {
+            const fallbackRef: ReferenceImage = {
+              id: `upload-own-${post.id}`,
+              filename: "uploaded",
+              imagePath: ownImage.url,
+              thumbnailPath: ownImage.url,
+              summary: "Own image reference",
+              tags: [],
+              metadata: {
+                schema_version: "1",
+                indoor_outdoor: "unknown",
+                place: { type: "unknown", detail: "" },
+                capture_method: "front_selfie",
+                framing: "chest_up",
+                expression: { type: "neutral", mouth: "closed", detail: "" },
+                time_of_day: "unknown",
+                image_style: { color: "color", detail: "" },
+              },
+              createdAt: new Date().toISOString(),
+            };
+            setSelectedRefs([fallbackRef]);
+
+            const updated: PostPlan = {
+              ...post,
+              characterRefs: [{ id: fallbackRef.id, path: fallbackRef.imagePath }],
+              selectedCharacterRefId: fallbackRef.id,
+              selectedCharacterRefPath: fallbackRef.imagePath,
+            };
+            setPost(updated);
+            savePost(updated);
+          } else {
+            setSelectedRefs([]);
+          }
         } else {
           setSelectedRefs([]);
         }
       })
       .catch(() => {
-        setSelectedRefs([]);
+        const storedRefs = resolveStoredRefs(generatedRefs);
+        setSelectedRefs(storedRefs || []);
       })
       .finally(() => setRefLoading(false));
   }, [open, post?.id, post?.selectedCharacterRefId]);
@@ -314,6 +379,34 @@ export function PostViewModal({
     const fresh = loadPosts().find((p) => p.id === postId);
     if (fresh) setPost(fresh);
   }, [postId]);
+
+  const applyCaptionToPost = useCallback((newCaption: string) => {
+    if (!post) return;
+
+    const normalizedCaption = newCaption.trim();
+    const shouldSyncHashtags =
+      post.status === "ready" ||
+      post.status === "publishing" ||
+      post.status === "scheduled" ||
+      post.status === "posted";
+    const updated: PostPlan = {
+      ...post,
+      caption: normalizedCaption,
+      hashtags: shouldSyncHashtags
+        ? hashtagsText
+            .split(",")
+            .map((t) => t.trim().replace(/^#/, ""))
+            .filter(Boolean)
+        : post.hashtags,
+      updatedAt: new Date().toISOString(),
+    };
+
+    savePost(updated);
+    setPost(updated);
+    setCaption(normalizedCaption);
+    setCaptionDirty(false);
+    setEditingCaption(false);
+  }, [hashtagsText, post]);
 
   const handleToggleRef = (ref: ReferenceImage) => {
     if (!post) return;
@@ -410,6 +503,50 @@ export function PostViewModal({
     }
   };
 
+  const handleManualImageUpload = (promptIndex: number, dataUri: string) => {
+    if (!post) return;
+
+    const nextImage = {
+      id: `manual-${Date.now()}-${promptIndex}`,
+      url: dataUri,
+      prompt: editingPrompts[promptIndex]?.prompt || "Manual upload",
+      selected: true,
+      createdAt: new Date().toISOString(),
+      promptIndex,
+      userProvided: true,
+      settings: {
+        imageSize: genSettings.imageSize,
+        numImages: 1,
+        numVariations: 1,
+        enableSafetyChecker: genSettings.enableSafetyChecker,
+      },
+    };
+
+    const remainingImages = post.generatedImages.filter(
+      (img) => !(img.promptIndex === promptIndex && img.userProvided)
+    );
+
+    const updated: PostPlan = {
+      ...post,
+      generatedImages: [nextImage, ...remainingImages],
+    };
+    setPost(updated);
+    savePost(updated);
+  };
+
+  const handleRemoveManualImage = (promptIndex: number) => {
+    if (!post) return;
+
+    const updated: PostPlan = {
+      ...post,
+      generatedImages: post.generatedImages.filter(
+        (img) => !(img.promptIndex === promptIndex && img.userProvided)
+      ),
+    };
+    setPost(updated);
+    savePost(updated);
+  };
+
   const handleRefLibrarySelected = (selected: ReferenceImage[]) => {
     if (!post) return;
     // Add selected library images as character references (skip already selected)
@@ -492,7 +629,6 @@ export function PostViewModal({
 
   const handleDeletePost = () => {
     if (!post) return;
-    const { deletePost } = require("@/lib/store");
     deletePost(post.id);
     onDelete?.(post.id);
     onOpenChange(false);
@@ -567,6 +703,10 @@ export function PostViewModal({
   const isGenerating = post.status === "generating";
   const canEdit = isDraft || isApproved || post.status === "ready";
   const mode = CREATION_MODE_CONFIG[post.creationMode] ?? CREATION_MODE_CONFIG.from_scratch;
+  const isManualPost = post.creationMode === "manual";
+  const isOwnImageCarousel =
+    post.creationMode === "from_own_images" && post.postType === "carousel";
+  const canManuallyToggleStatus = !post.taskId && (isDraft || isApproved);
 
   // Publishing validation
   const selectedImages = post.generatedImages.filter((i) => i.selected);
@@ -607,9 +747,50 @@ export function PostViewModal({
       (u) => u.startsWith("https://") || u.startsWith("http://")
     );
   }
+  const captionHelperImageUrls = Array.from(
+    new Set(
+      (
+        isReady
+          ? selectedImages.map((img) => img.url)
+          : [
+              ...post.referenceImages,
+              ...sourceImages,
+              ...post.generatedImages
+                .filter((img) => img.userProvided)
+                .map((img) => img.url),
+            ]
+      ).filter(Boolean)
+    )
+  );
 
   const needsLibraryRef =
     post.creationMode === "copy_post" || post.creationMode === "from_scratch";
+  const requiresReferenceSelection =
+    isManualPost || needsLibraryRef || isOwnImageCarousel;
+  const ownImageReference =
+    isOwnImageCarousel
+      ? post.generatedImages.find(
+          (img) => img.userProvided && img.promptIndex === 0
+        ) ?? post.generatedImages.find((img) => img.userProvided) ?? null
+      : null;
+  const showSourceImages = sourceImages.length > 0 && !isOwnImageCarousel;
+  const referenceLabel =
+    isManualPost || isOwnImageCarousel
+      ? `Reference Images${selectedRefs.length > 0 ? ` (${selectedRefs.length}/10)` : ""}`
+      : `Character Reference${selectedRefs.length > 0 ? `s (${selectedRefs.length}/10)` : ""}`;
+  const missingReferenceTitle = isManualPost || isOwnImageCarousel
+    ? "Add at least 1 reference image to generate"
+    : "Add at least 1 character reference to generate";
+
+  const handleStatusChange = (newStatus: "draft" | "approved") => {
+    if (!canManuallyToggleStatus || newStatus === post.status) return;
+    const updated: PostPlan = {
+      ...post,
+      status: newStatus,
+    };
+    setPost(updated);
+    savePost(updated);
+  };
 
   return (
     <>
@@ -617,11 +798,55 @@ export function PostViewModal({
         <DialogContent className="!w-[56rem] !max-w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto border-zinc-800 bg-zinc-950">
           {/* ── Header ──────────────────────────────────────────────── */}
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2.5 pr-8 text-zinc-100">
-              <span className="flex-1">
-                {post.title || "Untitled Post"}
-              </span>
-              <StatusBadge status={post.status} />
+            <DialogTitle className="flex items-start gap-2.5 pr-8 text-zinc-100">
+              <div className="min-w-0 flex-1">
+                {editingTitle ? (
+                  <Input
+                    value={post.title}
+                    onChange={(e) => {
+                      const updated = { ...post, title: e.target.value };
+                      setPost(updated);
+                      savePost(updated);
+                    }}
+                    onBlur={() => setEditingTitle(false)}
+                    autoFocus
+                    placeholder="Untitled Post"
+                    className="h-auto border-zinc-800 bg-zinc-900 px-3 py-2 text-2xl font-semibold text-zinc-100"
+                  />
+                ) : (
+                  <div className="flex min-w-0 items-start gap-2">
+                    <span
+                      className="min-w-0 cursor-pointer rounded px-1 -ml-1 transition-colors hover:bg-zinc-800/50"
+                      onClick={() => setEditingTitle(true)}
+                    >
+                      {post.title || "Untitled Post"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setEditingTitle(true)}
+                      className="mt-1 rounded p-0.5 text-zinc-600 transition-colors hover:text-zinc-300"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              <StatusBadge
+                status={post.status}
+                onStatusChange={
+                  canManuallyToggleStatus
+                    ? (newStatus) => {
+                        if (
+                          newStatus === "draft" ||
+                          newStatus === "approved"
+                        ) {
+                          handleStatusChange(newStatus);
+                        }
+                      }
+                    : undefined
+                }
+                allowedStatuses={canManuallyToggleStatus ? ["draft", "approved"] : undefined}
+              />
             </DialogTitle>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <Badge className="bg-zinc-800 text-[10px] text-zinc-300 hover:bg-zinc-800">
@@ -709,42 +934,67 @@ export function PostViewModal({
                     <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
                       Caption
                     </p>
-                    {canEdit && post.caption && !editingCaption && (
+                    <div className="flex items-center gap-2">
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setCaptionHelperOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-violet-400 transition-colors hover:bg-violet-500/10 hover:text-violet-300"
+                        >
+                          <Sparkles className="h-3 w-3" />
+                          <span>AI Helper</span>
+                        </button>
+                      )}
+                      {canEdit && post.caption && !editingCaption && (
+                        <button
+                          onClick={() => setEditingCaption(true)}
+                          className="rounded p-0.5 text-zinc-600 transition-colors hover:text-zinc-300"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    {canEdit && editingCaption ? (
+                      <Textarea
+                        value={post.caption}
+                        onChange={(e) => {
+                          const updated = { ...post, caption: e.target.value };
+                          setPost(updated);
+                          setCaption(e.target.value);
+                          savePost(updated);
+                        }}
+                        onBlur={() => setEditingCaption(false)}
+                        autoFocus
+                        className="min-h-[80px] resize-y border-zinc-800 bg-zinc-900 text-sm leading-6 text-zinc-200"
+                      />
+                    ) : post.caption ? (
+                      <div
+                        className={`min-h-[80px] rounded-md border border-zinc-800 bg-zinc-900 p-3 ${canEdit ? "cursor-pointer transition-colors hover:bg-zinc-800/70" : ""}`}
+                        onClick={() => canEdit && setEditingCaption(true)}
+                      >
+                        <p className="whitespace-pre-line text-sm leading-6 text-zinc-200">
+                          {post.caption}
+                        </p>
+                      </div>
+                    ) : canEdit ? (
                       <button
                         onClick={() => setEditingCaption(true)}
-                        className="rounded p-0.5 text-zinc-600 transition-colors hover:text-zinc-300"
+                        className="w-full rounded-md border border-dashed border-zinc-800 bg-zinc-900 px-3 py-8 text-left text-xs text-zinc-600 transition-colors hover:border-zinc-700 hover:text-zinc-400"
                       >
-                        <Pencil className="h-3 w-3" />
+                        + Add caption
                       </button>
-                    )}
+                    ) : null}
                   </div>
-                  {canEdit && editingCaption ? (
-                    <Textarea
-                      value={post.caption}
-                      onChange={(e) => {
-                        const updated = { ...post, caption: e.target.value };
-                        setPost(updated);
-                        savePost(updated);
-                      }}
-                      onBlur={() => setEditingCaption(false)}
-                      autoFocus
-                      className="min-h-[80px] resize-y border-zinc-800 bg-zinc-900 text-sm text-zinc-200"
-                    />
-                  ) : post.caption ? (
-                    <p
-                      className={`whitespace-pre-line text-sm leading-relaxed text-zinc-200 ${canEdit ? "cursor-pointer rounded px-1 -mx-1 transition-colors hover:bg-zinc-800/50" : ""}`}
-                      onClick={() => canEdit && setEditingCaption(true)}
-                    >
-                      {post.caption}
-                    </p>
-                  ) : canEdit ? (
-                    <button
-                      onClick={() => setEditingCaption(true)}
-                      className="text-xs text-zinc-600 hover:text-zinc-400"
-                    >
-                      + Add caption
-                    </button>
-                  ) : null}
                 </div>
               )}
 
@@ -780,13 +1030,13 @@ export function PostViewModal({
             </div>
 
             {/* ── Section: Reference Images ─────────────────────────── */}
-            {(sourceImages.length > 0 || needsLibraryRef) && (
+            {(showSourceImages || requiresReferenceSelection) && (
               <>
                 <Separator className="bg-zinc-800" />
                 <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">
                   <div className="flex gap-4">
                     {/* Source / Example images */}
-                    {sourceImages.length > 0 && (
+                    {showSourceImages && (
                       <div className="min-w-0 flex-1">
                         <p className="mb-2 text-[10px] font-medium text-zinc-500">
                           {post.creationMode === "from_own_images"
@@ -814,17 +1064,17 @@ export function PostViewModal({
                       </div>
                     )}
 
-                    {/* Character references */}
-                    {needsLibraryRef && (
+                    {/* Editable references */}
+                    {requiresReferenceSelection && (
                       <div
-                        className={`shrink-0 ${sourceImages.length > 0 ? "border-l border-zinc-800 pl-4" : ""}`}
+                        className={`min-w-0 ${showSourceImages ? "border-l border-zinc-800 pl-4" : "flex-1"}`}
                       >
                         {/* Header row */}
                         <div className="mb-2 flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <Wand2 className="h-2.5 w-2.5 text-zinc-500" />
                             <p className="text-[10px] font-medium text-zinc-500">
-                              Character Reference{selectedRefs.length > 0 ? `s (${selectedRefs.length}/10)` : ""}
+                              {referenceLabel}
                             </p>
                           </div>
                           {!isPosted && selectedRefs.length > 0 && selectedRefs.length < 10 && (
@@ -880,28 +1130,48 @@ export function PostViewModal({
                         ) : (
                           /* ── Populated state: thumbnails + upload drop zone ── */
                           <div className="flex flex-wrap items-end gap-2">
-                            {selectedRefs.map((ref) => (
-                              <div
-                                key={ref.id}
-                                className="group/ref relative cursor-pointer"
-                                onClick={() => setLightboxUrl(ref.thumbnailPath || ref.imagePath)}
-                              >
-                                <img
-                                  src={ref.thumbnailPath || ref.imagePath}
-                                  alt={ref.summary || ""}
-                                  className="h-20 w-20 rounded-md border border-violet-700/50 object-cover"
-                                />
-                                {!isPosted && (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); handleRemoveRef(ref.id); }}
-                                    className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-800 text-zinc-400 opacity-0 shadow transition-opacity hover:bg-red-900 hover:text-red-300 group-hover/ref:opacity-100"
-                                    title="Remove"
-                                  >
-                                    <X className="h-2.5 w-2.5" />
-                                  </button>
-                                )}
-                              </div>
-                            ))}
+                            {selectedRefs.map((ref) => {
+                              const isOwnSeedRef =
+                                isOwnImageCarousel &&
+                                ownImageReference?.url === ref.imagePath;
+
+                              return (
+                                <div
+                                  key={ref.id}
+                                  className="group/ref relative cursor-pointer"
+                                  onClick={() =>
+                                    setLightboxUrl(ref.thumbnailPath || ref.imagePath)
+                                  }
+                                >
+                                  <img
+                                    src={ref.thumbnailPath || ref.imagePath}
+                                    alt={ref.summary || ""}
+                                    className={`h-20 w-20 rounded-md border object-cover ${
+                                      isOwnSeedRef
+                                        ? "border-emerald-700/50"
+                                        : "border-violet-700/50"
+                                    }`}
+                                  />
+                                  {isOwnSeedRef && (
+                                    <div className="absolute -bottom-1 -right-1 rounded bg-emerald-900/90 px-1 py-0.5 text-[7px] font-medium text-emerald-300">
+                                      yours
+                                    </div>
+                                  )}
+                                  {!isPosted && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRemoveRef(ref.id);
+                                      }}
+                                      className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-800 text-zinc-400 opacity-0 shadow transition-opacity hover:bg-red-900 hover:text-red-300 group-hover/ref:opacity-100"
+                                      title="Remove"
+                                    >
+                                      <X className="h-2.5 w-2.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
 
                             {/* Upload drop zone */}
                             {!isPosted && selectedRefs.length < 10 && (
@@ -954,31 +1224,16 @@ export function PostViewModal({
                         )}
                         {selectedRefs.length === 0 && !refLoading && (
                           <p className="mt-1.5 text-[9px] text-amber-500/80">
-                            At least 1 character reference is required for generation
+                            {missingReferenceTitle}
+                          </p>
+                        )}
+                        {isOwnImageCarousel && ownImageReference && (
+                          <p className="mt-1.5 max-w-xs text-[9px] leading-relaxed text-zinc-500">
+                            Prefilled from slide 1. You can remove it, replace it, or add more reference images before generating slides 2 and 3.
                           </p>
                         )}
                       </div>
                     )}
-
-                    {/* Own image: "yours" badge */}
-                    {post.creationMode === "from_own_images" &&
-                      sourceImages.length > 0 && (
-                        <div className="shrink-0 border-l border-zinc-800 pl-4">
-                          <p className="mb-2 text-[10px] font-medium text-zinc-500">
-                            Your Image
-                          </p>
-                          <div className="relative">
-                            <img
-                              src={sourceImages[0]}
-                              alt=""
-                              className="h-20 w-20 rounded-md border border-emerald-700/50 object-cover"
-                            />
-                            <div className="absolute -bottom-1 -right-1 rounded bg-emerald-900/90 px-1 py-0.5 text-[7px] font-medium text-emerald-300">
-                              yours
-                            </div>
-                          </div>
-                        </div>
-                      )}
                   </div>
 
                 </div>
@@ -1058,9 +1313,52 @@ export function PostViewModal({
                                   : "Your Photo"}
                               </p>
                               <p className="text-xs italic text-zinc-500">
-                                Your original photo — used as slide{" "}
-                                {i + 1}
+                                {isManualPost
+                                  ? `Manual upload${editingPrompts.length > 1 ? ` — used as slide ${i + 1}` : ""}`
+                                  : <>Your original photo — used as slide{" "}{i + 1}</>}
                               </p>
+                              {post.status === "ready" && (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => handleRegenerateSlide(i)}
+                                    disabled={actions.isGenerating}
+                                    className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-amber-400 transition-colors hover:bg-amber-950/30 hover:text-amber-300 disabled:opacity-50"
+                                  >
+                                    <RefreshCw className="h-2.5 w-2.5" />
+                                    Regenerate
+                                  </button>
+                                </div>
+                              )}
+                              {isManualPost && promptEditMode && (
+                                <div className="flex items-center gap-1.5">
+                                  <label className="cursor-pointer rounded border border-zinc-700 px-2 py-1 text-[10px] text-zinc-400 transition-colors hover:border-violet-600 hover:text-violet-300">
+                                    Replace
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file || !file.type.startsWith("image/")) return;
+                                        const reader = new FileReader();
+                                        reader.onload = (ev) => {
+                                          const dataUri = ev.target?.result as string;
+                                          if (dataUri) handleManualImageUpload(i, dataUri);
+                                        };
+                                        reader.readAsDataURL(file);
+                                        e.target.value = "";
+                                      }}
+                                    />
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveManualImage(i)}
+                                    className="rounded border border-zinc-700 px-2 py-1 text-[10px] text-zinc-400 transition-colors hover:border-red-800 hover:text-red-300"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              )}
                               {promptData.referenceImageAnalysis && (
                                 <Collapsible>
                                   <CollapsibleTrigger className="flex items-center gap-1 text-[9px] font-medium text-zinc-600 hover:text-zinc-500">
@@ -1082,7 +1380,9 @@ export function PostViewModal({
                       );
                     }
 
-                    if (!promptData.prompt.trim() && !promptEditMode) return null;
+                    if (!promptData.prompt.trim() && !promptEditMode && !isManualPost) {
+                      return null;
+                    }
 
                     return (
                       <div
@@ -1109,22 +1409,45 @@ export function PostViewModal({
                                 </div>
                               </div>
                             ) : (
-                              <div className={`flex aspect-square w-full flex-col items-center justify-center rounded-md border bg-zinc-900 ${
-                                isCurrentlyGenerating
-                                  ? "border-violet-600/50 bg-violet-950/20"
-                                  : "border-dashed border-zinc-700"
-                              }`}>
-                                {isCurrentlyGenerating ? (
-                                  <>
-                                    <Loader2 className="h-5 w-5 animate-spin text-violet-400" />
-                                    <span className="mt-1 text-[8px] text-violet-400">Generating...</span>
-                                  </>
-                                ) : isGenerating ? (
-                                  <span className="text-[8px] text-zinc-600">Waiting...</span>
-                                ) : (
-                                  <ImageIcon className="h-5 w-5 text-zinc-700" />
-                                )}
-                              </div>
+                              isManualPost && canEdit ? (
+                                <label className="flex aspect-square w-full cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-zinc-700 bg-zinc-900 text-zinc-600 transition-colors hover:border-violet-600 hover:text-violet-400">
+                                  <Upload className="h-5 w-5" />
+                                  <span className="mt-1 text-[8px]">Upload</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (!file || !file.type.startsWith("image/")) return;
+                                      const reader = new FileReader();
+                                      reader.onload = (ev) => {
+                                        const dataUri = ev.target?.result as string;
+                                        if (dataUri) handleManualImageUpload(i, dataUri);
+                                      };
+                                      reader.readAsDataURL(file);
+                                      e.target.value = "";
+                                    }}
+                                  />
+                                </label>
+                              ) : (
+                                <div className={`flex aspect-square w-full flex-col items-center justify-center rounded-md border bg-zinc-900 ${
+                                  isCurrentlyGenerating
+                                    ? "border-violet-600/50 bg-violet-950/20"
+                                    : "border-dashed border-zinc-700"
+                                }`}>
+                                  {isCurrentlyGenerating ? (
+                                    <>
+                                      <Loader2 className="h-5 w-5 animate-spin text-violet-400" />
+                                      <span className="mt-1 text-[8px] text-violet-400">Generating...</span>
+                                    </>
+                                  ) : isGenerating ? (
+                                    <span className="text-[8px] text-zinc-600">Waiting...</span>
+                                  ) : (
+                                    <ImageIcon className="h-5 w-5 text-zinc-700" />
+                                  )}
+                                </div>
+                              )
                             )}
                           </div>
 
@@ -1345,22 +1668,32 @@ export function PostViewModal({
                           </label>
                           <button
                             type="button"
-                            onClick={() => setCaptionHelperOpen(true)}
-                            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-violet-400 transition-colors hover:bg-violet-950/30 hover:text-violet-300"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setCaptionHelperOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-violet-400 transition-colors hover:bg-violet-500/10 hover:text-violet-300"
                           >
-                            <Sparkles className="h-2.5 w-2.5" />
-                            AI Helper
+                            <Sparkles className="h-3 w-3" />
+                            <span>AI Helper</span>
                           </button>
                         </div>
-                        <Textarea
-                          value={caption}
-                          onChange={(e) => {
-                            setCaption(e.target.value);
-                            setCaptionDirty(true);
-                          }}
-                          className="min-h-[100px] resize-none border-zinc-800 bg-zinc-900 text-xs text-zinc-100"
-                          placeholder="Instagram caption"
-                        />
+                        <div>
+                          <Textarea
+                            value={caption}
+                            onChange={(e) => {
+                              setCaption(e.target.value);
+                              setCaptionDirty(true);
+                            }}
+                            className="min-h-[100px] resize-none border-zinc-800 bg-zinc-900 text-xs leading-5 text-zinc-100"
+                            placeholder="Instagram caption"
+                          />
+                        </div>
                       </div>
 
                       {/* Hashtags */}
@@ -1664,8 +1997,8 @@ export function PostViewModal({
                 {isDraft && (
                   <Button
                     onClick={handleApproveAndGenerate}
-                    disabled={actions.isGenerating || (needsLibraryRef && selectedRefs.length === 0)}
-                    title={needsLibraryRef && selectedRefs.length === 0 ? "Add at least 1 character reference to generate" : undefined}
+                    disabled={actions.isGenerating || (requiresReferenceSelection && selectedRefs.length === 0)}
+                    title={requiresReferenceSelection && selectedRefs.length === 0 ? missingReferenceTitle : undefined}
                     className="bg-violet-600 text-white hover:bg-violet-700"
                   >
                     <Check className="mr-1.5 h-4 w-4" />
@@ -1675,8 +2008,8 @@ export function PostViewModal({
                 {isApproved && (
                   <Button
                     onClick={handleApproveAndGenerate}
-                    disabled={actions.isGenerating || (needsLibraryRef && selectedRefs.length === 0)}
-                    title={needsLibraryRef && selectedRefs.length === 0 ? "Add at least 1 character reference to generate" : undefined}
+                    disabled={actions.isGenerating || (requiresReferenceSelection && selectedRefs.length === 0)}
+                    title={requiresReferenceSelection && selectedRefs.length === 0 ? missingReferenceTitle : undefined}
                     className="bg-violet-600 text-white hover:bg-violet-700"
                   >
                     <Sparkles className="mr-1.5 h-4 w-4" />
@@ -1754,12 +2087,9 @@ export function PostViewModal({
       <CaptionHelperDialog
         open={captionHelperOpen}
         onOpenChange={setCaptionHelperOpen}
-        currentCaption={caption}
-        imageUrls={selectedImages.map((i) => i.url)}
-        onApplyCaption={(newCaption) => {
-          setCaption(newCaption);
-          setCaptionDirty(true);
-        }}
+        currentCaption={isReady ? caption : post.caption}
+        imageUrls={captionHelperImageUrls}
+        onApplyCaption={applyCaptionToPost}
       />
 
       {/* Image lightbox — rendered via portal outside Dialog */}

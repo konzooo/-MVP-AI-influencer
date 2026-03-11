@@ -35,10 +35,9 @@ export function Sidebar() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [instagramOpen, setInstagramOpen] = useState(false);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Task[]>(() => loadTasks());
 
   useEffect(() => {
-    setTasks(loadTasks());
     const handler = () => setTasks(loadTasks());
     window.addEventListener(TASKS_UPDATED_EVENT, handler);
 
@@ -200,7 +199,7 @@ export function Sidebar() {
       </aside>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-      <AISettingsDialog open={aiSettingsOpen} onOpenChange={setAiSettingsOpen} />
+      {aiSettingsOpen ? <AISettingsDialog open={aiSettingsOpen} onOpenChange={setAiSettingsOpen} /> : null}
       <InstagramAccountDialog open={instagramOpen} onOpenChange={setInstagramOpen} />
     </>
   );

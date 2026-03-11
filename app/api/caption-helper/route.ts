@@ -1,22 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DEFAULT_TRANSPARENCY } from "@/lib/transparency";
 
-const SYSTEM_PROMPT = `You are a creative Instagram caption writer for an AI influencer.
-
-You will receive:
-- One or more images (the post's selected photos)
-- The current caption (may be empty)
-- A request from the user describing what kind of caption they want
-
-Your job is to write a new Instagram caption based on all of this context.
-
-Guidelines:
-- Write in first person as the influencer
-- Match the mood and vibe of the images
-- Keep it authentic and conversational — not corporate or over-produced
-- Use natural line breaks (\\n) between thoughts
-- Do NOT include hashtags — those are handled separately
-- Length should match the request: if they ask for "minimal" keep it 1-2 lines; if they ask for "longer" or "storytelling" go up to 4-6 lines
-- Do NOT wrap the output in quotes or add any explanation — return ONLY the caption text itself`;
+const DEFAULT_SYSTEM_PROMPT = DEFAULT_TRANSPARENCY.geminiPrompts.captionHelperPrompt;
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -24,7 +9,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
   }
 
-  const { userRequest, currentCaption, imageUrls } = await request.json();
+  const { userRequest, currentCaption, imageUrls, personaContext, systemPrompt } = await request.json();
 
   if (!userRequest?.trim()) {
     return NextResponse.json({ error: "userRequest is required" }, { status: 400 });
@@ -33,7 +18,7 @@ export async function POST(request: NextRequest) {
   // Build the Gemini request parts
   const parts: object[] = [];
 
-  let userMessage = `Current caption: ${currentCaption?.trim() || "(none)"}
+  const userMessage = `Current caption: ${currentCaption?.trim() || "(none)"}
 
 Request: ${userRequest.trim()}
 
@@ -66,8 +51,13 @@ Please write a new Instagram caption based on the image(s) and request above.`;
     }
   }
 
+  const activeSystemPrompt = systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT;
+  const resolvedSystemPrompt = personaContext?.trim()
+    ? `${personaContext}\n\n${activeSystemPrompt}`
+    : activeSystemPrompt;
+
   const geminiPayload = {
-    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    systemInstruction: { parts: [{ text: resolvedSystemPrompt }] },
     contents: [{ role: "user", parts }],
     generationConfig: {
       temperature: 0.9,

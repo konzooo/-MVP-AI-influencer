@@ -4,6 +4,9 @@ import { PostPlan, CreationMode, PostType, createEmptyPost } from "./types";
 import { savePost } from "./store";
 import { loadIdentity, buildPersonaContext } from "./identity";
 import { loadAISettings } from "./ai-settings";
+import { selectCharacterReference, buildContextFromKeywords } from "./reference-selector";
+import { recordLLMCall } from "./cost-tracker";
+import type { ReferenceImage } from "./types";
 
 /**
  * Creates a new post by brainstorming/analyzing based on creation mode.
@@ -55,7 +58,9 @@ export async function brainstormPost(params: {
     throw new Error(data.error || "Failed to generate plan");
   }
 
+  const aiProviderUsed = (response.headers.get("x-ai-provider") as typeof aiProvider | null) ?? aiProvider;
   const plan = await response.json();
+  recordLLMCall(aiProviderUsed, "brainstorm", aiProviderUsed === "claude" ? 0.02 : 0);
 
   const newPost = createEmptyPost(creationMode, postType);
   newPost.postType = postType;
@@ -78,6 +83,30 @@ export async function brainstormPost(params: {
       textOverlay: plan.storyTextOverlay || plan.caption || "",
       linkUrl: plan.storyLinkUrl || "",
     };
+  }
+
+  // Smart-select character reference from library
+  if (creationMode === "from_scratch" || creationMode === "copy_post") {
+    try {
+      const refsRes = await fetch("/api/reference-images");
+      if (refsRes.ok) {
+        const { images: refs }: { images: ReferenceImage[] } = await refsRes.json();
+        if (refs.length > 0) {
+          const refContext = buildContextFromKeywords(
+            [newPost.title, newPost.description, newPost.caption].filter(Boolean).join(" ")
+          );
+          const charRef = selectCharacterReference(refs, refContext);
+          if (charRef) {
+            newPost.selectedCharacterRefId = charRef.id;
+            newPost.selectedCharacterRefPath = charRef.imagePath;
+            newPost.characterRefs = [{ id: charRef.id, path: charRef.imagePath }];
+            console.log("[brainstormPost] Smart-selected character reference:", charRef.id);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[brainstormPost] Failed to smart-select reference image:", err);
+    }
   }
 
   savePost(newPost);
@@ -142,9 +171,11 @@ async function brainstormOwnImages(params: {
     }
 
     const result = await expandResponse.json();
+    recordLLMCall("gemini", "expand_carousel");
 
     // Upload user image to FAL storage before saving (base64 is too large for localStorage)
     const uploadedUrls = await uploadImages([images[0]]);
+    const ownImageRefId = `upload-own-${Date.now()}-0`;
 
     const newPost = createEmptyPost("from_own_images", "carousel");
     newPost.title = result.title;
@@ -152,7 +183,10 @@ async function brainstormOwnImages(params: {
     newPost.caption = result.caption;
     newPost.hashtags = result.hashtags;
     newPost.notes = result.notes || "";
-    newPost.status = "approved";
+    newPost.status = "draft";
+    newPost.characterRefs = [{ id: ownImageRefId, path: uploadedUrls[0] }];
+    newPost.selectedCharacterRefId = ownImageRefId;
+    newPost.selectedCharacterRefPath = uploadedUrls[0];
 
     newPost.imagePrompts = [
       { prompt: "", referenceImages: [], referenceImageAnalysis: result.referenceImageAnalysis || "" }, // Slide 1: the user's uploaded image (stored in generatedImages)
@@ -201,6 +235,7 @@ async function brainstormOwnImages(params: {
   }
 
   const result = await response.json();
+  recordLLMCall("gemini", "analyze_images");
 
   // Upload user images to FAL storage before saving (base64 is too large for localStorage)
   const uploadedUrls = await uploadImages(images);

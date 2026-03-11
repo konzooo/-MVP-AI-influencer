@@ -3,11 +3,12 @@
 import { useState, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { PostPlan, GeneratedImage } from "@/lib/types";
-import { savePost, loadPosts } from "@/lib/store";
+import { savePost } from "@/lib/store";
 import { generatePostImages } from "@/lib/task-runner";
 import { checkDailyLimit, recordGeneration } from "@/lib/cost-tracker";
 import { canPublish, recordPublish } from "@/lib/instagram-rate-limit";
 import { Task } from "@/lib/task-types";
+import { saveGeneratedImagesToLibrary } from "@/lib/generated-image-library";
 
 export function usePostActions() {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -111,37 +112,101 @@ export function usePostActions() {
       setIsGenerating(true);
 
       try {
-        // Collect reference images — use character ref if stored, plus prompt-level refs
+        // Collect reference images — use stored refs if available, plus prompt-level refs
         const referenceUrls: string[] = [];
+        const useOwnImageCarouselReference =
+          post.creationMode === "from_own_images" &&
+          post.postType === "carousel" &&
+          slideIndex > 0;
+        const storedRefs =
+          post.characterRefs && post.characterRefs.length > 0
+            ? post.characterRefs
+            : post.selectedCharacterRefPath
+              ? [
+                  {
+                    id: post.selectedCharacterRefId || "legacy-ref",
+                    path: post.selectedCharacterRefPath,
+                  },
+                ]
+              : [];
 
-        // Add character reference if available
-        if (post.selectedCharacterRefPath) {
-          const { uploadToFalStorageClient } = await import(
-            "@/lib/fal-client"
-          );
-          const baseUrl =
-            process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-          const localRefUrl = `${baseUrl}${post.selectedCharacterRefPath}`;
-          try {
-            const refRes = await fetch(localRefUrl);
-            const blob = await refRes.blob();
-            const reader = new FileReader();
-            const base64 = await new Promise<string>((resolve) => {
-              reader.onloadend = () => resolve(reader.result as string);
-              reader.readAsDataURL(blob);
-            });
-            const uploaded = await uploadToFalStorageClient(base64);
-            referenceUrls.push(uploaded);
-          } catch {
-            // If char ref upload fails, continue without it
+        const { uploadToFalStorageClient } = await import(
+          "@/lib/fal-client"
+        );
+        const baseUrl =
+          process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+
+        // Own-image carousels use the editable reference set for companion slides.
+        if (useOwnImageCarouselReference && storedRefs.length > 0) {
+          for (const ref of storedRefs) {
+            try {
+              if (ref.path.startsWith("data:")) {
+                const uploaded = await uploadToFalStorageClient(ref.path);
+                referenceUrls.push(uploaded);
+                continue;
+              }
+
+              const refUrl =
+                ref.path.startsWith("http://") ||
+                ref.path.startsWith("https://")
+                  ? ref.path
+                  : `${baseUrl}${ref.path}`;
+              const refRes = await fetch(refUrl);
+              const blob = await refRes.blob();
+              const reader = new FileReader();
+              const base64 = await new Promise<string>((resolve) => {
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(blob);
+              });
+              const uploaded = await uploadToFalStorageClient(base64);
+              referenceUrls.push(uploaded);
+            } catch {
+              // If a stored ref upload fails, continue with the remaining refs
+            }
+          }
+        } else if (useOwnImageCarouselReference) {
+          const slideOneImage =
+            post.generatedImages.find(
+              (img) => img.promptIndex === 0 && img.userProvided
+            ) ?? post.generatedImages.find((img) => img.userProvided);
+          if (slideOneImage?.url) {
+            referenceUrls.push(slideOneImage.url);
+          }
+        } else {
+          for (const ref of storedRefs) {
+            try {
+              if (ref.path.startsWith("data:")) {
+                const uploaded = await uploadToFalStorageClient(ref.path);
+                referenceUrls.push(uploaded);
+                continue;
+              }
+
+              if (
+                ref.path.startsWith("http://") ||
+                ref.path.startsWith("https://")
+              ) {
+                referenceUrls.push(ref.path);
+                continue;
+              }
+
+              const refUrl = `${baseUrl}${ref.path}`;
+              const refRes = await fetch(refUrl);
+              const blob = await refRes.blob();
+              const reader = new FileReader();
+              const base64 = await new Promise<string>((resolve) => {
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(blob);
+              });
+              const uploaded = await uploadToFalStorageClient(base64);
+              referenceUrls.push(uploaded);
+            } catch {
+              // If a stored ref upload fails, continue with the remaining refs
+            }
           }
         }
 
         // Upload prompt-level reference images
         if (promptData.referenceImages.length > 0) {
-          const { uploadToFalStorageClient } = await import(
-            "@/lib/fal-client"
-          );
           for (const img of promptData.referenceImages) {
             try {
               const url = await uploadToFalStorageClient(img);
@@ -216,6 +281,10 @@ export function usePostActions() {
           generatedImages: [...allNewImages, ...post.generatedImages],
         };
         savePost(updatedPost);
+        saveGeneratedImagesToLibrary(allNewImages, {
+          postId: post.id,
+          postTitle: post.title,
+        });
 
         toast.success(
           `Generated ${allNewImages.length} image${allNewImages.length > 1 ? "s" : ""}`

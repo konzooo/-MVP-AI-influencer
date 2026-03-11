@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { recordLLMCall } from "@/lib/cost-tracker";
+import { loadTransparency } from "@/lib/transparency";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +43,8 @@ export function PromptHelperDialog({
     setGeneratedPrompt("");
 
     try {
+      const systemPrompt = loadTransparency().geminiPrompts.promptHelperPrompt;
+
       const response = await fetch("/api/prompt-helper", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -48,6 +52,7 @@ export function PromptHelperDialog({
           userInput,
           currentPrompt,
           referenceImages,
+          systemPrompt,
         }),
       });
 
@@ -57,6 +62,7 @@ export function PromptHelperDialog({
       }
 
       const data = await response.json();
+      recordLLMCall("gemini", "prompt_helper");
       setGeneratedPrompt(data.prompt);
       toast.success("Prompt generated!");
     } catch (err) {

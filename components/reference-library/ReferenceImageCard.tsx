@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Copy, MapPin, Camera, Clock, Palette, Smile, Edit2, Save, X, Loader2 } from "lucide-react";
+import { Copy, MapPin, Camera, Clock, Palette, Smile, Edit2, Save, X, Loader2, Sparkles } from "lucide-react";
 import type { ReferenceImage, ReferenceImageMetadata } from "@/lib/types";
 
 interface ReferenceImageCardProps {
@@ -27,6 +27,8 @@ export function ReferenceImageCard({
   selectable = false,
   selected = false
 }: ReferenceImageCardProps) {
+  const isGeneratedImage = image.librarySource === "generated";
+  const isEditable = !isGeneratedImage;
   const [imageError, setImageError] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -63,6 +65,7 @@ export function ReferenceImageCard({
   };
 
   const handleSave = async () => {
+    if (!isEditable) return;
     try {
       setIsSaving(true);
       const response = await fetch(`/api/reference-images/${image.filename}`, {
@@ -124,6 +127,8 @@ export function ReferenceImageCard({
         <Image
           src={image.thumbnailPath}
           alt={image.summary}
+          loader={({ src }) => src}
+          unoptimized
           fill
           className="object-cover"
           onError={() => setImageError(true)}
@@ -151,6 +156,11 @@ export function ReferenceImageCard({
             <h3 className="font-medium text-sm text-zinc-100 mb-1 line-clamp-1">
               {image.filename}
             </h3>
+            {isGeneratedImage && (
+              <Badge variant="outline" className="mb-2 text-[10px] uppercase tracking-wide">
+                Generated
+              </Badge>
+            )}
             <p className="text-xs text-zinc-400 line-clamp-2 mb-2">
               {image.summary}
             </p>
@@ -187,6 +197,11 @@ export function ReferenceImageCard({
           <DialogTitle className="flex items-center gap-2">
             <Camera className="h-5 w-5" />
             {image.filename}
+            {isGeneratedImage && (
+              <Badge variant="outline" className="ml-2 text-[10px] uppercase tracking-wide">
+                Generated
+              </Badge>
+            )}
           </DialogTitle>
         </DialogHeader>
 
@@ -197,6 +212,8 @@ export function ReferenceImageCard({
               <Image
                 src={image.imagePath}
                 alt={image.summary}
+                loader={({ src }) => src}
+                unoptimized
                 width={1200}
                 height={800}
                 className="object-contain max-h-[60vh] w-auto"
@@ -215,7 +232,7 @@ export function ReferenceImageCard({
           <ScrollArea className="max-h-[30vh]">
             <div className="space-y-4">
               {/* Edit Mode Controls */}
-              {!isEditMode && (
+              {isEditable && !isEditMode && (
                 <Button
                   onClick={() => setIsEditMode(true)}
                   variant="outline"
@@ -227,7 +244,7 @@ export function ReferenceImageCard({
                 </Button>
               )}
 
-              {isEditMode && (
+              {isEditable && isEditMode && (
                 <div className="flex gap-2">
                   <Button
                     onClick={handleSave}
@@ -287,6 +304,27 @@ export function ReferenceImageCard({
               
               {/* Metadata */}
               {!isEditMode ? (
+                isGeneratedImage ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-violet-400" />
+                      <div>
+                        <p className="text-xs text-zinc-500">Source</p>
+                        <p className="text-sm text-zinc-300">Saved from fal.ai output</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-violet-400" />
+                      <div>
+                        <p className="text-xs text-zinc-500">Created</p>
+                        <p className="text-sm text-zinc-300">
+                          {new Date(image.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
                 <div className="grid grid-cols-2 gap-4">
                   <div className="flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-violet-400" />
@@ -326,6 +364,7 @@ export function ReferenceImageCard({
                     </div>
                   </div>
                 </div>
+                )
               ) : (
                 <div className="space-y-4">
                   <div>
@@ -442,7 +481,7 @@ export function ReferenceImageCard({
               )}
               
               {/* Place Details */}
-              {(editData.place_detail || isEditMode) && (
+              {!isGeneratedImage && (editData.place_detail || isEditMode) && (
                 <div>
                   <h4 className="font-medium text-zinc-100 mb-2">Place Details</h4>
                   {isEditMode ? (
@@ -459,7 +498,7 @@ export function ReferenceImageCard({
               )}
 
               {/* Expression Details */}
-              {(editData.expression_detail || isEditMode) && (
+              {!isGeneratedImage && (editData.expression_detail || isEditMode) && (
                 <div>
                   <h4 className="font-medium text-zinc-100 mb-2">Expression Details</h4>
                   {isEditMode ? (
@@ -476,7 +515,7 @@ export function ReferenceImageCard({
               )}
 
               {/* Style Details */}
-              {(editData.image_style_detail || isEditMode) && (
+              {!isGeneratedImage && (editData.image_style_detail || isEditMode) && (
                 <div>
                   <h4 className="font-medium text-zinc-100 mb-2">Style Details</h4>
                   {isEditMode ? (

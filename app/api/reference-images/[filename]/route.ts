@@ -3,7 +3,7 @@ import { readFile, mkdir, access, writeFile } from "fs/promises";
 import { join } from "path";
 import sharp from "sharp";
 
-const REFERENCE_IMAGES_PATH = "/Users/kons/Documents/Side/Images/<alba_ai0>/Training Data set";
+const REFERENCE_IMAGES_PATH = "/Users/kons/Documents/Side/Images/<alba_ai0>/Original Training Data set";
 const THUMBS_DIR = join(REFERENCE_IMAGES_PATH, ".thumbs");
 
 export async function GET(

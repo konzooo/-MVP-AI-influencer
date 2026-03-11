@@ -24,7 +24,11 @@ export async function POST(request: NextRequest) {
           personaContext,
           carouselStyle: (carouselStyle as "quick_snaps" | "curated_series") || undefined,
         });
-        return NextResponse.json(plan);
+        return NextResponse.json(plan, {
+          headers: {
+            "x-ai-provider": "claude",
+          },
+        });
       } catch (claudeError) {
         console.warn("Claude brainstorm failed, falling back to Gemini:", claudeError);
         // Fall through to Gemini
@@ -51,7 +55,11 @@ export async function POST(request: NextRequest) {
       personaContext,
       (carouselStyle as "quick_snaps" | "curated_series") || undefined
     );
-    return NextResponse.json(plan);
+    return NextResponse.json(plan, {
+      headers: {
+        "x-ai-provider": "gemini",
+      },
+    });
   } catch (error) {
     console.error("Brainstorm error:", error);
     const message =

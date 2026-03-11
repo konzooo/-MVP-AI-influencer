@@ -9,7 +9,6 @@ import {
 import {
   createEmptyPost,
   PostPlan,
-  PostType,
 } from "./types";
 import { savePost as savePostState } from "./store";
 import { loadIdentity } from "./identity";
@@ -20,10 +19,11 @@ import {
   buildContextFromKeywords,
 } from "./reference-selector";
 import { uploadToFalStorage } from "./fal";
-import { checkDailyLimit, recordGeneration } from "./cost-tracker";
+import { checkDailyLimit, recordGeneration, recordLLMCall } from "./cost-tracker";
 import { canPublish, recordPublish } from "./instagram-rate-limit";
 import { ReferenceImage } from "./types";
 import { loadAISettings } from "./ai-settings";
+import { saveGeneratedImagesToLibrary } from "./generated-image-library";
 
 interface ExecutionLog {
   lines: string[];
@@ -38,6 +38,24 @@ function createLog(): ExecutionLog {
       console.log(`[TaskRunner] ${msg}`);
     },
   };
+}
+
+function getFilledImageForPrompt(post: PostPlan, promptIdx: number) {
+  const isSinglePromptPost = post.imagePrompts.length === 1;
+
+  const matches = post.generatedImages.filter((img) => {
+    if (img.promptIndex === promptIdx) return true;
+    if (isSinglePromptPost && promptIdx === 0 && img.promptIndex === undefined) {
+      return true;
+    }
+    return false;
+  });
+
+  return (
+    matches.find((img) => img.selected) ??
+    matches.find((img) => img.userProvided) ??
+    null
+  );
 }
 
 // ─── Standalone generation function ──────────────────────────────────────────
@@ -126,6 +144,17 @@ export async function generatePostImages(
         if (ref.path.startsWith("data:")) {
           // Already a base64 data URI (user-uploaded image)
           refBase64 = ref.path;
+        } else if (
+          ref.path.startsWith("http://") ||
+          ref.path.startsWith("https://")
+        ) {
+          const refRes = await fetch(ref.path);
+          if (!refRes.ok) {
+            throw new Error(`Failed to fetch reference image: ${refRes.status}`);
+          }
+          const refBlob = await refRes.blob();
+          const refBuffer = Buffer.from(await refBlob.arrayBuffer());
+          refBase64 = `data:${refBlob.type || "image/jpeg"};base64,${refBuffer.toString("base64")}`;
         } else {
           // Server path — fetch and convert to base64
           const localRefUrl = `${baseUrl}${ref.path}`;
@@ -160,11 +189,12 @@ export async function generatePostImages(
 
       const prompt = post.imagePrompts[promptIdx];
 
-      // Skip userProvided prompt (own_image carousel slide 1)
-      if (post.generatedImages.some((g) => g.promptIndex === promptIdx && g.userProvided)) {
-        const userImg = post.generatedImages.find((g) => g.promptIndex === promptIdx && g.userProvided);
-        if (userImg) slide0GeneratedUrl = userImg.url;
-        log.add(`Skipping slide ${promptIdx + 1} (user provided)`);
+      const existingImage = getFilledImageForPrompt(post, promptIdx);
+      if (existingImage) {
+        if (post.postType === "carousel" && promptIdx === 0) {
+          slide0GeneratedUrl = existingImage.url;
+        }
+        log.add(`Skipping slide ${promptIdx + 1} (already filled)`);
         continue;
       }
 
@@ -186,10 +216,20 @@ export async function generatePostImages(
       // the original character ref would introduce conflicting style signals.
       const isCarouselFollowSlide =
         post.postType === "carousel" && promptIdx > 0 && slide0GeneratedUrl !== null;
+      const isOwnImageCarouselFollowSlide =
+        post.creationMode === "from_own_images" &&
+        post.postType === "carousel" &&
+        promptIdx > 0;
 
       let referenceUrls: string[];
-      if (isCarouselFollowSlide) {
-        // Slide 1 generated image is the sole reference — it anchors identity, scene, outfit, and mood
+      if (isOwnImageCarouselFollowSlide && charRefUrls.length > 0) {
+        // Ad-hoc own-image carousels use the editable reference set, prefilled with slide 1.
+        referenceUrls = [...charRefUrls];
+        log.add(
+          `Slide ${promptIdx + 1}: using ${charRefUrls.length} editable reference image(s)`
+        );
+      } else if (isCarouselFollowSlide) {
+        // For generated carousels, slide 1 remains the sole follow-slide reference.
         referenceUrls = [slide0GeneratedUrl!];
         log.add(`Slide ${promptIdx + 1}: using slide 1 image as reference (dropping character ref for consistency)`);
       } else {
@@ -236,7 +276,7 @@ export async function generatePostImages(
         }
 
         const img = genResult.images[0];
-        post.generatedImages.unshift({
+        const generatedImage = {
           id: `gen-${Date.now()}-${promptIdx}`,
           url: img.url,
           prompt: prompt.prompt,
@@ -250,6 +290,12 @@ export async function generatePostImages(
             numVariations: 1,
             enableSafetyChecker: true,
           },
+        };
+
+        post.generatedImages.unshift(generatedImage);
+        saveGeneratedImagesToLibrary([generatedImage], {
+          postId: post.id,
+          postTitle: post.title,
         });
 
         if (post.postType === "carousel" && promptIdx === 0) {
@@ -277,19 +323,26 @@ export async function generatePostImages(
       }
     }
 
-    // Only mark as ready if at least one image was generated (excluding user-provided)
+    const filledPromptCount = post.imagePrompts.reduce((count, _, promptIdx) => {
+      return count + (getFilledImageForPrompt(post, promptIdx) ? 1 : 0);
+    }, 0);
     const generatedCount = post.generatedImages.filter((g) => !g.userProvided).length;
-    if (generatedCount === 0) {
+
+    if (filledPromptCount < post.imagePrompts.length) {
       post.status = "draft";
       savePostState(post);
-      result.error = "All image generations failed — no images produced";
+      result.error = `Some slides are still missing images (${filledPromptCount}/${post.imagePrompts.length} filled)`;
       log.add(`ERROR: ${result.error}`);
       return result;
     }
 
     post.status = "ready";
     savePostState(post);
-    log.add(`Status: ready (${generatedCount} images generated)`);
+    log.add(
+      generatedCount > 0
+        ? `Status: ready (${generatedCount} images generated)`
+        : "Status: ready (all slides were already filled)"
+    );
 
     result.success = true;
     return result;
@@ -391,6 +444,7 @@ export async function runTask(
         }
 
         const expandPlan = await expandRes.json();
+        recordLLMCall("gemini", "expand_carousel");
         post = createEmptyPost("from_own_images", "carousel");
         Object.assign(post, expandPlan);
         post.status = "approved"; // needs generation for slides 2-3
@@ -440,6 +494,7 @@ export async function runTask(
         }
 
         const analyzePlan = await analyzeRes.json();
+        recordLLMCall("gemini", "analyze_images");
         post = createEmptyPost("from_own_images", selectedItem.postType);
         Object.assign(post, analyzePlan);
         post.status = "ready"; // skips generation — own images are final
@@ -484,12 +539,14 @@ export async function runTask(
         return result;
       }
 
+      const providerUsed = (brainstormRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? "gemini";
       const brainstormPlan = await brainstormRes.json();
+      recordLLMCall(providerUsed, "brainstorm", providerUsed === "claude" ? 0.02 : 0);
       post = createEmptyPost("copy_post", selectedItem.postType);
       Object.assign(post, brainstormPlan);
       post.status = "draft";
       log.add(
-        `Brainstorm complete (copy_post): "${post.title}" with ${post.imagePrompts.length} prompts`
+        `Brainstorm complete (copy_post via ${providerUsed}): "${post.title}" with ${post.imagePrompts.length} prompts`
       );
     } else {
       // from_scratch
@@ -521,12 +578,14 @@ export async function runTask(
         return result;
       }
 
+      const providerUsed = (brainstormRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.brainstormFromScratch;
       const brainstormPlan = await brainstormRes.json();
+      recordLLMCall(providerUsed, "brainstorm", providerUsed === "claude" ? 0.02 : 0);
       post = createEmptyPost("from_scratch", selectedItem.postType);
       Object.assign(post, brainstormPlan);
       post.status = "draft";
       log.add(
-        `Brainstorm complete (from_scratch): "${post.title}" with ${post.imagePrompts.length} prompts`
+        `Brainstorm complete (from_scratch via ${providerUsed}): "${post.title}" with ${post.imagePrompts.length} prompts`
       );
     }
 

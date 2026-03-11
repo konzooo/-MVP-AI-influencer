@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { recordLLMCall } from "@/lib/cost-tracker";
+import { buildPersonaContext, loadIdentity } from "@/lib/identity";
+import { loadTransparency } from "@/lib/transparency";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +44,10 @@ export function CaptionHelperDialog({
     setGeneratedCaption("");
 
     try {
+      const identity = loadIdentity();
+      const personaContext = identity.isActive ? buildPersonaContext(identity) : undefined;
+      const systemPrompt = loadTransparency().geminiPrompts.captionHelperPrompt;
+
       const res = await fetch("/api/caption-helper", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -48,6 +55,8 @@ export function CaptionHelperDialog({
           userRequest,
           currentCaption,
           imageUrls,
+          personaContext,
+          systemPrompt,
         }),
       });
 
@@ -57,6 +66,7 @@ export function CaptionHelperDialog({
       }
 
       const data = await res.json();
+      recordLLMCall("gemini", "caption_helper");
       setGeneratedCaption(data.caption);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to generate caption");

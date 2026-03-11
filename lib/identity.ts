@@ -37,6 +37,15 @@ export interface InfluencerIdentity {
   isActive: boolean;
 }
 
+const FALLBACK_CAPTION_TONE =
+  "Captions should stay consistent with the image mood/atmosphere and persona. Keep them authentic, natural, and never over-performed.";
+
+const FALLBACK_CAPTION_LANGUAGE =
+  "Keep the caption concise and natural. Usually 1 short line, maximum 2 lines unless the format or request clearly calls for more. Dry humor, wit, or abstract phrasing is fine when it fits. Never cringe.";
+
+const FALLBACK_EMOJI_USAGE =
+  "Use 0-2 emojis max, only when subtle and contextual. Never use decorative emoji spam.";
+
 /**
  * Default Alba identity profile
  */
@@ -190,9 +199,10 @@ export const DEFAULT_IDENTITY: InfluencerIdentity = {
   ],
   locationExamples: "Bedroom, Bathroom, Couch/Living Room, Beach & Sea, Coffee Shop, Car Interior, Southeast Asia, South Africa, Europe, or similar coastal/urban/travel destinations",
 
-  captionTone: "casual, authentic, slightly mysterious — like she's sharing a moment, not performing",
+  captionTone:
+    "casual, authentic, slightly mysterious — like she's sharing a moment, not performing. It should match the mood/atmosphere, does not always have to describe the picture but can be witty and abstract.",
   captionLanguage:
-    "Short punchy sentences or fragments. Occasional dry humor. Never cringe. No excessive exclamation marks.",
+    "Mostly only a few words. Should be usually 1 line, maximum 2 lines. Occasional dry humor. Never cringe. No excessive exclamation marks. Occasionally you can end it with a question to keep audience engaged but only if it's not forced.",
   emojiUsage: "1-2 per caption max, subtle and contextual (never decorative)",
 
   varietyGuidelines: [
@@ -215,7 +225,7 @@ export function loadIdentity(): InfluencerIdentity {
     if (typeof window === "undefined") return DEFAULT_IDENTITY;
     const stored = localStorage.getItem("ai-influencer-identity");
     if (!stored) return DEFAULT_IDENTITY;
-    return JSON.parse(stored);
+    return { ...DEFAULT_IDENTITY, ...JSON.parse(stored) };
   } catch {
     return DEFAULT_IDENTITY;
   }
@@ -231,6 +241,29 @@ export function saveIdentity(identity: InfluencerIdentity): void {
   } catch (err) {
     console.error("Failed to save identity:", err);
   }
+}
+
+function resolveCaptionStyleValue(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : fallback;
+}
+
+export function buildCaptionStyleContext(
+  identity: Pick<InfluencerIdentity, "captionTone" | "captionLanguage" | "emojiUsage">
+): string {
+  const captionTone = resolveCaptionStyleValue(identity.captionTone, FALLBACK_CAPTION_TONE);
+  const captionLanguage = resolveCaptionStyleValue(identity.captionLanguage, FALLBACK_CAPTION_LANGUAGE);
+  const emojiUsage = resolveCaptionStyleValue(identity.emojiUsage, FALLBACK_EMOJI_USAGE);
+
+  return `CAPTION STYLE:
+Caption tone: ${captionTone}
+Caption language & style: ${captionLanguage}
+Emoji usage: ${emojiUsage}
+
+CAPTION RULES:
+- Every generated caption must follow the caption style above.
+- Keep captions consistent with the image mood/atmosphere and persona.
+- If the format is short-form (especially stories), keep the caption brief while still following the style.`;
 }
 
 /**
@@ -259,13 +292,10 @@ CONTENT THEMES: ${contentThemesSummary}
 
 LOCATION EXAMPLES: ${identity.locationExamples}
 
-VOICE & TONE:
-Caption tone: ${identity.captionTone}
-Caption language: ${identity.captionLanguage}
-Emoji usage: ${identity.emojiUsage}
+${buildCaptionStyleContext(identity)}
 
 VARIETY GUIDELINES (to prevent repetitive posts):
 ${varietyRules}
 
-IMPORTANT: When generating content, pick the most appropriate Style Mode for the context. Choose locations from PREFERRED LOCATIONS that fit the vibe. Write captions in Alba's voice. Image prompts should describe scene/location/style but NOT facial features (the character reference image handles appearance). Consider variety rules to avoid repetitive posts.`;
+IMPORTANT: When generating content, pick the most appropriate Style Mode for the context. Choose locations from PREFERRED LOCATIONS that fit the vibe. Any generated caption must follow the CAPTION STYLE section above. Image prompts should describe scene/location/style but NOT facial features (the character reference image handles appearance). Consider variety rules to avoid repetitive posts.`;
 }

@@ -9,12 +9,18 @@ import {
   Copy,
   UserRound,
   Sparkles,
+  PenTool,
 } from "lucide-react";
 
 const CREATION_MODE_CONFIG: Record<
   string,
   { label: string; icon: React.ReactNode; className: string }
 > = {
+  manual: {
+    label: "Manual",
+    icon: <PenTool className="mr-0.5 h-2.5 w-2.5" />,
+    className: "border-amber-800 bg-amber-950/40 text-amber-300",
+  },
   copy_post: {
     label: "Copy",
     icon: <Copy className="mr-0.5 h-2.5 w-2.5" />,

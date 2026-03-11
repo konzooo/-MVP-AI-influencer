@@ -1,6 +1,6 @@
 export type PostStatus = "draft" | "approved" | "generating" | "ready" | "publishing" | "scheduled" | "posted";
 export type PostType = "single_image" | "carousel" | "reel_cover" | "story";
-export type CreationMode = "from_scratch" | "copy_post" | "from_own_images";
+export type CreationMode = "manual" | "from_scratch" | "copy_post" | "from_own_images";
 
 export interface ImagePrompt {
   prompt: string;
@@ -129,6 +129,7 @@ export interface ReferenceImage {
   tags: string[];
   metadata: ReferenceImageMetadata;
   createdAt: string;
+  librarySource?: "reference" | "generated";
 }
 
 export interface ReferenceLibraryFilters {

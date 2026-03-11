@@ -1,7 +1,13 @@
 const COST_LOG_KEY = "ai-influencer-cost-log";
 const COST_SETTINGS_KEY = "ai-influencer-cost-settings";
+const LLM_LOG_KEY = "ai-influencer-llm-log";
 
 const COST_PER_GENERATION = 0.04; // USD, roughly equivalent to EUR for MVP
+
+// ─── Types ───────────────────────────────────────────────────────────────
+
+export type LLMProvider = "gemini" | "claude";
+export type LLMCallType = "brainstorm" | "caption_helper" | "prompt_helper" | "expand_carousel" | "analyze_images";
 
 export interface CostEntry {
   id: string;
@@ -10,10 +16,21 @@ export interface CostEntry {
   type: "generation";
 }
 
+export interface LLMEntry {
+  id: string;
+  timestamp: string;
+  provider: LLMProvider;
+  callType: LLMCallType;
+  cost: number; // 0 for free providers like Gemini
+}
+
 export interface CostSettings {
   dailyWarningLimit: number;
   dailyStopLimit: number;
 }
+
+// Gemini 2.5 Flash free tier: 500 RPD (requests per day)
+const GEMINI_DAILY_LIMIT = 500;
 
 const DEFAULT_SETTINGS: CostSettings = {
   dailyWarningLimit: 1.0,
@@ -38,7 +55,7 @@ export function saveCostSettings(settings: CostSettings): void {
   localStorage.setItem(COST_SETTINGS_KEY, JSON.stringify(settings));
 }
 
-// ─── Cost Log ─────────────────────────────────────────────────────────────
+// ─── Image Generation Cost Log ───────────────────────────────────────────
 
 function loadLog(): CostEntry[] {
   if (typeof window === "undefined") return [];
@@ -125,4 +142,80 @@ export function checkDailyLimit(): {
     dailyWarningLimit: settings.dailyWarningLimit,
     dailyStopLimit: settings.dailyStopLimit,
   };
+}
+
+// ─── LLM Usage Log ──────────────────────────────────────────────────────
+
+function loadLLMLog(): LLMEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(LLM_LOG_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+function saveLLMLog(entries: LLMEntry[]): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(LLM_LOG_KEY, JSON.stringify(entries));
+}
+
+/** Record an LLM API call. Prunes entries older than 30 days. */
+export function recordLLMCall(provider: LLMProvider, callType: LLMCallType, cost: number = 0): void {
+  const entries = loadLLMLog();
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const pruned = entries.filter(
+    (e) => new Date(e.timestamp) > thirtyDaysAgo
+  );
+
+  pruned.push({
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    provider,
+    callType,
+    cost,
+  });
+
+  saveLLMLog(pruned);
+}
+
+/** Get daily LLM call count by provider. */
+export function getDailyLLMCalls(provider?: LLMProvider): LLMEntry[] {
+  const entries = loadLLMLog();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return entries.filter(
+    (e) => new Date(e.timestamp) >= today && (!provider || e.provider === provider)
+  );
+}
+
+/** Get Gemini usage stats: count and limit. */
+export function getGeminiUsage(): { count: number; limit: number; percentage: number } {
+  const count = getDailyLLMCalls("gemini").length;
+  return {
+    count,
+    limit: GEMINI_DAILY_LIMIT,
+    percentage: Math.min((count / GEMINI_DAILY_LIMIT) * 100, 100),
+  };
+}
+
+/** Get Claude daily spend from LLM calls. */
+export function getClaudeDailySpend(): number {
+  return getDailyLLMCalls("claude").reduce((sum, e) => sum + e.cost, 0);
+}
+
+/** Get weekly LLM spend by provider. */
+export function getWeeklyLLMSpend(provider?: LLMProvider): number {
+  const entries = loadLLMLog();
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+
+  return entries
+    .filter((e) => new Date(e.timestamp) >= weekAgo && (!provider || e.provider === provider))
+    .reduce((sum, e) => sum + e.cost, 0);
 }

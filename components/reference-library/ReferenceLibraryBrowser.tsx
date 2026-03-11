@@ -6,7 +6,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ReferenceImageCard } from "@/components/reference-library/ReferenceImageCard";
 import { ReferenceLibraryFilters } from "@/components/reference-library/ReferenceLibraryFilters";
 import { Button } from "@/components/ui/button";
-import { Images, Loader2, AlertCircle } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { loadGeneratedImageLibrary, GENERATED_IMAGE_LIBRARY_UPDATED_EVENT, isGeneratedImageLibraryStorageEvent } from "@/lib/generated-image-library";
+import { Images, Loader2, AlertCircle, Sparkles } from "lucide-react";
 import type { ReferenceImage, ReferenceLibraryFilters as FiltersType } from "@/lib/types";
 
 interface ReferenceLibraryBrowserProps {
@@ -26,11 +28,13 @@ export function ReferenceLibraryBrowser({
   showHeader = true,
   headerContent,
 }: ReferenceLibraryBrowserProps) {
-  const [images, setImages] = useState<ReferenceImage[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
+  const [generatedImages, setGeneratedImages] = useState<ReferenceImage[]>([]);
+  const [referenceLoading, setReferenceLoading] = useState(true);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"reference" | "generated">("reference");
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
-  const [selectionMode, setSelectionMode] = useState(defaultSelectionMode);
+  const selectionMode = defaultSelectionMode;
 
   const [filters, setFilters] = useState<FiltersType>({
     search: "",
@@ -43,13 +47,36 @@ export function ReferenceLibraryBrowser({
 
   // Load images on mount
   useEffect(() => {
-    loadImages();
+    loadReferenceImages();
+    loadGeneratedImages();
   }, []);
 
-  const loadImages = async () => {
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const handleGeneratedLibraryUpdate = () => {
+      loadGeneratedImages();
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (isGeneratedImageLibraryStorageEvent(event)) {
+        loadGeneratedImages();
+      }
+    };
+
+    window.addEventListener(GENERATED_IMAGE_LIBRARY_UPDATED_EVENT, handleGeneratedLibraryUpdate);
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener(GENERATED_IMAGE_LIBRARY_UPDATED_EVENT, handleGeneratedLibraryUpdate);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  const loadReferenceImages = async () => {
     try {
-      setLoading(true);
-      setError(null);
+      setReferenceLoading(true);
+      setReferenceError(null);
 
       const response = await fetch("/api/reference-images");
       if (!response.ok) {
@@ -57,15 +84,24 @@ export function ReferenceLibraryBrowser({
       }
 
       const data = await response.json();
-      setImages(data.images || data || []);
+      setReferenceImages(data.images || data || []);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "An error occurred";
-      setError(msg);
-      toast.error(msg);
+      setReferenceError(msg);
+      if (activeTab === "reference") {
+        toast.error(msg);
+      }
     } finally {
-      setLoading(false);
+      setReferenceLoading(false);
     }
   };
+
+  const loadGeneratedImages = () => {
+    setGeneratedImages(loadGeneratedImageLibrary());
+  };
+
+  const images = activeTab === "reference" ? referenceImages : generatedImages;
+  const hasMetadataFilters = activeTab === "reference";
 
   // Filter images based on current filters
   const filteredImages = useMemo(() => {
@@ -79,6 +115,10 @@ export function ReferenceLibraryBrowser({
           image.tags.some(tag => tag.toLowerCase().includes(searchTerm));
 
         if (!matchesSearch) return false;
+      }
+
+      if (!hasMetadataFilters) {
+        return true;
       }
 
       // Location filter (handle "unknown" values)
@@ -112,7 +152,7 @@ export function ReferenceLibraryBrowser({
 
       return true;
     });
-  }, [images, filters]);
+  }, [filters, hasMetadataFilters, images]);
 
   const handleImageSelect = (image: ReferenceImage) => {
     if (!selectionMode) return;
@@ -126,46 +166,14 @@ export function ReferenceLibraryBrowser({
     setSelectedImages(newSelected);
   };
 
-  const toggleSelectionMode = () => {
-    setSelectionMode(!selectionMode);
-    if (selectionMode) {
-      setSelectedImages(new Set());
-    }
-  };
-
   const handleConfirmSelection = () => {
     if (onImagesSelected) {
-      const selected = images.filter((img) => selectedImages.has(img.id));
+      const allImages = [...referenceImages, ...generatedImages];
+      const selected = allImages.filter((img) => selectedImages.has(img.id));
       onImagesSelected(selected);
     }
   };
 
-
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-violet-500" />
-          <p className="mt-2 text-sm text-zinc-400">Loading reference images...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="mx-auto h-8 w-8 text-red-500" />
-          <p className="mt-2 text-sm text-zinc-400">Failed to load images</p>
-          <p className="text-xs text-zinc-500">{error}</p>
-          <Button onClick={loadImages} variant="outline" className="mt-4">
-            Try Again
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
@@ -180,7 +188,7 @@ export function ReferenceLibraryBrowser({
                 </div>
                 <div>
                   <h1 className="text-lg font-semibold text-zinc-100">Reference Library</h1>
-                  <p className="text-sm text-zinc-400">Browse and select reference images</p>
+                  <p className="text-sm text-zinc-400">Browse reference images and saved fal.ai generations</p>
                 </div>
               </div>
 
@@ -212,6 +220,21 @@ export function ReferenceLibraryBrowser({
       {/* Scrollable content - filters, button, and grid */}
       <ScrollArea className="flex-1 min-h-0">
         <div className="p-6">
+          <div className="mb-6">
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "reference" | "generated")}>
+              <TabsList className="grid w-full grid-cols-2 rounded-xl bg-zinc-950 p-1">
+                <TabsTrigger value="reference" className="gap-2 rounded-lg data-[state=active]:bg-zinc-900">
+                  <Images className="h-4 w-4" />
+                  Reference Images
+                </TabsTrigger>
+                <TabsTrigger value="generated" className="gap-2 rounded-lg data-[state=active]:bg-zinc-900">
+                  <Sparkles className="h-4 w-4" />
+                  Generated Images
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+
           {/* Filters */}
           <div className="mb-6">
             <ReferenceLibraryFilters
@@ -219,17 +242,43 @@ export function ReferenceLibraryBrowser({
               onFiltersChange={setFilters}
               totalImages={images.length}
               filteredCount={filteredImages.length}
+              showMetadataFilters={hasMetadataFilters}
+              searchPlaceholder={
+                activeTab === "reference"
+                  ? "Search descriptions, tags, or filenames..."
+                  : "Search prompts, tags, or filenames..."
+              }
             />
           </div>
 
-          {/* Legacy confirmation button removed — now in header */}
-
-          {filteredImages.length === 0 ? (
+          {activeTab === "reference" && referenceLoading ? (
+            <div className="flex h-64 items-center justify-center">
+              <div className="text-center">
+                <Loader2 className="mx-auto h-8 w-8 animate-spin text-violet-500" />
+                <p className="mt-2 text-sm text-zinc-400">Loading reference images...</p>
+              </div>
+            </div>
+          ) : activeTab === "reference" && referenceError ? (
+            <div className="flex h-64 items-center justify-center">
+              <div className="text-center">
+                <AlertCircle className="mx-auto h-8 w-8 text-red-500" />
+                <p className="mt-2 text-sm text-zinc-400">Failed to load reference images</p>
+                <p className="text-xs text-zinc-500">{referenceError}</p>
+                <Button onClick={loadReferenceImages} variant="outline" className="mt-4">
+                  Try Again
+                </Button>
+              </div>
+            </div>
+          ) : filteredImages.length === 0 ? (
             <div className="flex h-64 items-center justify-center">
               <div className="text-center">
                 <Images className="mx-auto h-12 w-12 text-zinc-600" />
                 <p className="mt-2 text-sm text-zinc-400">
-                  {images.length === 0 ? "No reference images found" : "No images match your filters"}
+                  {images.length === 0
+                    ? activeTab === "reference"
+                      ? "No reference images found"
+                      : "No generated images saved yet"
+                    : "No images match your filters"}
                 </p>
                 {images.length > 0 && (
                   <Button

@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { CreationMode, PostType } from "@/lib/types";
+import { createEmptyPost, CreationMode, PostType } from "@/lib/types";
 import { brainstormPost } from "@/lib/brainstorm";
+import { savePost } from "@/lib/store";
 import { ImageDropZone } from "@/components/ui/ImageDropZone";
 import { ReferenceLibraryDialog } from "@/components/reference-library/ReferenceLibraryDialog";
 import type { ReferenceImage } from "@/lib/types";
@@ -22,6 +23,7 @@ import {
   Copy,
   ImageIcon,
   Library,
+  PenTool,
 } from "lucide-react";
 
 const POST_TYPE_OPTIONS: { value: PostType; label: string; desc: string }[] = [
@@ -52,7 +54,10 @@ export function CreatePostModal({
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
 
   const canSubmit =
-    creationMode && postType && (idea.trim() || images.length > 0) && !isLoading;
+    !!creationMode &&
+    !!postType &&
+    (creationMode === "manual" || idea.trim() || images.length > 0) &&
+    !isLoading;
 
   const reset = () => {
     setCreationMode(null);
@@ -71,19 +76,26 @@ export function CreatePostModal({
     setIsLoading(true);
 
     try {
-      console.log("[CreatePostModal] Starting brainstorm with mode:", creationMode);
+      console.log("[CreatePostModal] Starting create flow with mode:", creationMode);
+      let newPost;
+      if (creationMode === "manual") {
+        newPost = createEmptyPost("manual", postType);
+        savePost(newPost);
+      } else {
+        newPost = await brainstormPost({
+          idea,
+          images,
+          creationMode,
+          postType,
+        });
+      }
 
-      const newPost = await brainstormPost({
-        idea,
-        images,
-        creationMode,
-        postType,
-      });
-
-      console.log("[CreatePostModal] Brainstorm completed, post ID:", newPost.id);
+      console.log("[CreatePostModal] Create flow completed, post ID:", newPost.id);
 
       toast.success(
-        creationMode === "from_own_images"
+        creationMode === "manual"
+          ? "Manual draft created!"
+          : creationMode === "from_own_images"
           ? "Post created from your images!"
           : creationMode === "copy_post"
             ? "Post plan generated from reference!"
@@ -104,7 +116,7 @@ export function CreatePostModal({
   };
 
   const handleLibraryImagesSelected = async (selected: ReferenceImage[]) => {
-    const base64Images: string[] = [];
+    const libraryImages: string[] = [];
     for (const img of selected) {
       try {
         const res = await fetch(img.imagePath);
@@ -114,12 +126,14 @@ export function CreatePostModal({
           reader.onloadend = () => resolve(reader.result as string);
           reader.readAsDataURL(blob);
         });
-        base64Images.push(dataUri);
+        libraryImages.push(dataUri);
       } catch {
-        // skip
+        if (img.imagePath.startsWith("http://") || img.imagePath.startsWith("https://")) {
+          libraryImages.push(img.imagePath);
+        }
       }
     }
-    setImages((prev) => [...prev, ...base64Images]);
+    setImages((prev) => [...prev, ...libraryImages]);
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -199,6 +213,18 @@ export function CreatePostModal({
                   </button>
                 ))}
               </div>
+              <button
+                type="button"
+                onClick={() => setCreationMode("manual")}
+                className={`inline-flex items-center gap-1.5 pl-1 pt-1 text-xs italic transition-colors ${
+                  creationMode === "manual"
+                    ? "font-serif text-violet-300"
+                    : "font-serif text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                <PenTool className="h-3 w-3" />
+                manual
+              </button>
             </div>
 
             {/* Step 2: Post type */}
@@ -233,7 +259,7 @@ export function CreatePostModal({
             </div>
 
             {/* Step 3: Content */}
-            {creationMode && postType && (
+            {creationMode && postType && creationMode !== "manual" && (
               <div className="animate-in fade-in slide-in-from-top-2 space-y-4 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4 duration-300">
                 {/* Image upload (for copy_post and from_own_images) */}
                 {(creationMode === "copy_post" ||
@@ -315,7 +341,9 @@ export function CreatePostModal({
             {/* Footer */}
             <div className="flex items-center justify-between">
               <p className="text-xs text-zinc-600">
-                {creationMode === "copy_post"
+                {creationMode === "manual"
+                  ? "Create a blank draft and fill in the title, copy, prompts, and images yourself"
+                  : creationMode === "copy_post"
                   ? "The AI will analyze the images and create a recreation plan"
                   : creationMode === "from_own_images"
                     ? "The AI will analyze your photos and generate caption & details"

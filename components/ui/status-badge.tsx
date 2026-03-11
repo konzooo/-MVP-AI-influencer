@@ -69,6 +69,8 @@ interface StatusBadgeProps {
   status: PostStatus;
   /** When provided, the badge becomes clickable and allows changing the status. */
   onStatusChange?: (newStatus: PostStatus) => void;
+  /** Optional subset of statuses to show in the dropdown */
+  allowedStatuses?: PostStatus[];
   /** Extra tailwind classes for the badge */
   className?: string;
 }
@@ -76,6 +78,7 @@ interface StatusBadgeProps {
 export function StatusBadge({
   status,
   onStatusChange,
+  allowedStatuses,
   className,
 }: StatusBadgeProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -123,6 +126,12 @@ export function StatusBadge({
     setPendingStatus(null);
   };
 
+  const selectableStatuses = allowedStatuses?.length
+    ? ALL_STATUSES.filter((statusOption) =>
+        allowedStatuses.includes(statusOption)
+      )
+    : ALL_STATUSES;
+
   return (
     <>
       <DropdownMenu>
@@ -154,7 +163,7 @@ export function StatusBadge({
           className="min-w-[120px]"
           onClick={(e) => e.stopPropagation()}
         >
-          {ALL_STATUSES.map((s) => {
+          {selectableStatuses.map((s) => {
             const sc = statusConfig[s];
             return (
               <DropdownMenuItem

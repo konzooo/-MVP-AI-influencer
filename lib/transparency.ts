@@ -13,6 +13,8 @@ export interface TransparencyData {
     copyPostPrompt: string;
     analyzeOwnImagesPrompt: string;
     expandCarouselPrompt: string;
+    promptHelperPrompt: string;
+    captionHelperPrompt: string;
   };
   geminiConfig: {
     model: string;
@@ -52,7 +54,7 @@ export interface TransparencyData {
 }
 
 export const DEFAULT_TRANSPARENCY: TransparencyData = {
-  lastUpdated: "2026-03-03",
+  lastUpdated: "2026-03-11",
   geminiPrompts: {
     sharedPreamble: `You are an expert Instagram content strategist and creative director for an AI influencer account.
 
@@ -77,6 +79,11 @@ IMPORTANT: The image generation prompt you write will be sent to an image genera
 - Reference the character as "the character from Figure 1"
 - Do NOT describe specific facial features, hair color, or other identity traits — the character reference handles that
 - Always describe the desired aesthetic and technical qualities (e.g. "professional photography, soft natural light, shallow depth of field")
+
+CAPTION REQUIREMENT:
+- If persona context includes a CAPTION STYLE section, treat it as the source of truth for the caption and follow it exactly
+- Keep the caption consistent with the image mood/atmosphere and persona
+- For stories, keep the caption brief even if the caption style guidance is more expansive
 
 Return your response as valid JSON matching this exact structure:
 {
@@ -128,6 +135,11 @@ The user will upload one or more images of posts they want to replicate. For EAC
    - Do NOT mention hair color, skin tone, facial features, eye color — the character reference handles all of that
    - End with photographic style cues (e.g. "shot on 35mm, shallow depth of field, slightly grainy, editorial feel")
 
+CAPTION REQUIREMENT:
+- If persona context includes a CAPTION STYLE section, treat it as the source of truth for the caption and follow it exactly
+- Keep the caption consistent with the recreated mood/atmosphere and persona
+- For stories, keep the caption brief even if the caption style guidance is more expansive
+
 Return your response as valid JSON matching this exact structure:
 {
   "title": "Descriptive title (e.g. 'Golden hour balcony, flowy sundress, editorial warmth')",
@@ -176,8 +188,9 @@ Your job:
 4. Write a descriptive title for internal organization
 
 Guidelines for captions:
+- If persona context includes a CAPTION STYLE section, treat it as the source of truth for the caption and follow it exactly
+- Keep the caption consistent with the image mood/atmosphere and persona
 - Write in first person as the AI influencer
-- Be authentic, engaging, and conversational
 - Match the mood/vibe of the images
 - Include 2-4 lines with natural line breaks (use \\n)
 - Don't over-explain — let the images speak
@@ -208,8 +221,9 @@ The user has uploaded their own image that they want to use as the FIRST slide o
 {{CAROUSEL_STYLE_INSTRUCTION}}
 
 Guidelines for captions:
+- If persona context includes a CAPTION STYLE section, treat it as the source of truth for the caption and follow it exactly
+- Keep the caption consistent with the image mood/atmosphere and persona
 - Write in first person as the AI influencer
-- Be authentic, engaging, and conversational
 - Match the mood/vibe of the images
 - Include 2-4 lines with natural line breaks (use \\n)
 
@@ -232,6 +246,71 @@ Return your response as valid JSON matching this exact structure:
 }
 
 Return ONLY the JSON object, no markdown code blocks or extra text.`,
+
+    promptHelperPrompt: `You are an expert at writing prompts for Seedream 4.5, an advanced image generation model that uses natural language prompts and reference images.
+
+Your job is to help users create or improve prompts based on their needs. You will receive:
+1. The user's natural language request (what they want to change/create)
+2. Their current prompt (if any)
+3. Reference images they're using
+
+CRITICAL SEEDREAM 4.5 PROMPT RULES:
+- Reference images are provided as "Figure 1", "Figure 2", etc. Always use these references in your prompts.
+- For character consistency, the prompt should reference "the character from Figure 1" (or whichever figure is the character reference).
+- DO NOT describe identity features like hair color, skin tone, or facial structure — the reference image handles that.
+- DO describe: pose, environment, composition, lighting, clothing, mood, camera angle, style.
+- Be specific about technical qualities: "professional photography", "soft natural light", "shallow depth of field", "35mm lens", etc.
+- Keep prompts concise but detailed — aim for 2-4 sentences.
+
+COMMON USE CASES:
+1. **Starting from scratch**: User has reference images but no prompt yet.
+   → Analyze the references and create a complete prompt.
+
+2. **Improving existing prompt**: User has a prompt but wants changes.
+   → Keep what works, modify what they asked for, maintain Seedream best practices.
+
+3. **Simple variations**: "Make her swimming", "Change to sunset", etc.
+   → Keep the core prompt structure, swap out the specific element.
+
+4. **Fixing issues**: "Make lighting more dramatic", "More relaxed pose", etc.
+   → Identify the relevant part of the prompt and enhance it.
+
+OUTPUT FORMAT:
+Return ONLY the optimized prompt as plain text. No markdown, no explanations, no code blocks.
+Just the prompt string ready to be used with Seedream 4.5.
+
+EXAMPLE INPUTS AND OUTPUTS:
+
+Input: "Help me create an image of her swimming"
+Current prompt: ""
+Output: "Create a photo of the character from Figure 1 swimming in clear turquoise water, waist-up framing, arms mid-stroke. Underwater perspective with sunlight rays filtering through the water. Natural outdoor lighting, bright and vibrant colors, professional sports photography style."
+
+Input: "Make the lighting more dramatic"
+Current prompt: "Create a photo of the character from Figure 1 standing in a bedroom, soft natural light."
+Output: "Create a photo of the character from Figure 1 standing in a bedroom, dramatic side lighting casting strong shadows across her face. Hard directional light from a single window, moody atmosphere, high contrast, cinematic style."
+
+Input: "Change to a beach at sunset"
+Current prompt: "Create a photo of the character from Figure 1 in a cozy living room, warm lamp light."
+Output: "Create a photo of the character from Figure 1 on a beach at golden hour, warm sunset glow, silhouette with rim lighting. Feet in the sand, waves in background, relaxed pose looking at the ocean. Professional photography, shallow depth of field, warm color grading."`,
+
+    captionHelperPrompt: `You are a creative Instagram caption writer for an AI influencer.
+
+You will receive:
+- One or more images (the post's selected photos)
+- The current caption (may be empty)
+- A request from the user describing what kind of caption they want
+- Optional persona context that may include a CAPTION STYLE section
+
+Your job is to write a new Instagram caption based on all of this context.
+
+Guidelines:
+- If persona context includes a CAPTION STYLE section, treat it as the source of truth for the caption and follow it exactly
+- Write in first person as the influencer
+- Match the mood and vibe of the images and persona
+- Use natural line breaks (\\n) between thoughts
+- Do NOT include hashtags — those are handled separately
+- Length should match the request: if they ask for "minimal" keep it 1-2 lines; if they ask for "longer" or "storytelling" go up to 4-6 lines
+- Do NOT wrap the output in quotes or add any explanation — return ONLY the caption text itself`,
   },
 
   geminiConfig: {
@@ -316,9 +395,42 @@ export function loadTransparency(): TransparencyData {
     const stored = localStorage.getItem("ai-influencer-transparency");
     if (!stored) return DEFAULT_TRANSPARENCY;
     const parsed = JSON.parse(stored);
-    // Ensure lastUpdated is always present (backfill for older stored configs)
-    if (!parsed.lastUpdated) parsed.lastUpdated = DEFAULT_TRANSPARENCY.lastUpdated;
-    return parsed;
+    return {
+      ...DEFAULT_TRANSPARENCY,
+      ...parsed,
+      geminiPrompts: {
+        ...DEFAULT_TRANSPARENCY.geminiPrompts,
+        ...parsed.geminiPrompts,
+      },
+      geminiConfig: {
+        ...DEFAULT_TRANSPARENCY.geminiConfig,
+        ...parsed.geminiConfig,
+        temperature: {
+          ...DEFAULT_TRANSPARENCY.geminiConfig.temperature,
+          ...parsed.geminiConfig?.temperature,
+        },
+      },
+      falConfig: {
+        ...DEFAULT_TRANSPARENCY.falConfig,
+        ...parsed.falConfig,
+        parameters: {
+          ...DEFAULT_TRANSPARENCY.falConfig.parameters,
+          ...parsed.falConfig?.parameters,
+        },
+      },
+      instagramConfig: {
+        ...DEFAULT_TRANSPARENCY.instagramConfig,
+        ...parsed.instagramConfig,
+        limits: {
+          ...DEFAULT_TRANSPARENCY.instagramConfig.limits,
+          ...parsed.instagramConfig?.limits,
+        },
+      },
+      systemLimits: {
+        ...DEFAULT_TRANSPARENCY.systemLimits,
+        ...parsed.systemLimits,
+      },
+    };
   } catch {
     return DEFAULT_TRANSPARENCY;
   }

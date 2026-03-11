@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -9,10 +10,14 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
+  AI_PROVIDER_KEYS,
+  AI_PROVIDER_LABELS,
+  CAROUSEL_STYLES,
   loadAISettings,
   saveAISettings,
   type AISettings,
   type AIProvider,
+  type AIProviderKey,
   type CarouselStyle,
 } from "@/lib/ai-settings";
 import { Brain, Check, Camera, Layers } from "lucide-react";
@@ -22,23 +27,23 @@ interface AISettingsDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type AIProviderKey = "brainstormFromScratch" | "brainstormCopyPost" | "expandCarousel" | "captionHelper";
-
 const TASK_INFO: Record<AIProviderKey, { label: string }> = {
   brainstormFromScratch: { label: "Brainstorm (From Scratch)" },
   brainstormCopyPost: { label: "Brainstorm (Copy Post)" },
+  analyzeImages: { label: "Analyze Own Images" },
   expandCarousel: { label: "Expand Carousel" },
+  promptHelper: { label: "Prompt Helper" },
   captionHelper: { label: "Caption Helper" },
 };
 
 const PROVIDER_INFO: Record<AIProvider, { name: string; cost: string; tag: string }> = {
   gemini: {
-    name: "Gemini 2.5 Flash",
+    name: AI_PROVIDER_LABELS.gemini,
     cost: "Free",
     tag: "FAST",
   },
   claude: {
-    name: "Claude Sonnet 4.5",
+    name: AI_PROVIDER_LABELS.claude,
     cost: "$0.02",
     tag: "CREATIVE",
   },
@@ -58,37 +63,29 @@ const CAROUSEL_STYLE_INFO: Record<CarouselStyle, { label: string; description: s
 };
 
 export function AISettingsDialog({ open, onOpenChange }: AISettingsDialogProps) {
-  const [settings, setSettings] = useState<AISettings | null>(null);
+  const [settings, setSettings] = useState<AISettings>(() => loadAISettings());
   const [isDirty, setIsDirty] = useState(false);
 
-  useEffect(() => {
-    if (open) {
-      setSettings(loadAISettings());
-      setIsDirty(false);
-    }
-  }, [open]);
-
   const handleProviderChange = (task: AIProviderKey, provider: AIProvider) => {
-    if (!settings) return;
     const updated = { ...settings, [task]: provider };
     setSettings(updated);
     setIsDirty(true);
   };
 
   const handleCarouselStyleChange = (style: CarouselStyle) => {
-    if (!settings) return;
     setSettings({ ...settings, carouselStyle: style });
     setIsDirty(true);
   };
 
   const handleSave = () => {
-    if (settings) {
-      saveAISettings(settings);
-      onOpenChange(false);
-    }
+    saveAISettings(settings);
+    const claudeCount = AI_PROVIDER_KEYS.filter((key) => settings[key] === "claude").length;
+    const geminiCount = AI_PROVIDER_KEYS.length - claudeCount;
+    toast.success("AI settings saved", {
+      description: `${geminiCount} on Gemini, ${claudeCount} on Claude`,
+    });
+    onOpenChange(false);
   };
-
-  if (!settings) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -101,13 +98,16 @@ export function AISettingsDialog({ open, onOpenChange }: AISettingsDialogProps) 
         </DialogHeader>
 
         <div className="space-y-2">
-          {/* Section: AI Models */}
           <div>
             <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">AI Models</p>
+            <div className="px-3 pb-2">
+              <p className="text-[10px] text-zinc-500">
+                Each LLM-backed flow can be switched independently. Save to make the new provider active for future requests.
+              </p>
+            </div>
 
-            {/* Task rows */}
             <div className="space-y-1 border-t border-zinc-800">
-              {(Object.keys(TASK_INFO) as AIProviderKey[]).map((task) => (
+              {AI_PROVIDER_KEYS.map((task) => (
                 <div
                   key={task}
                   className="flex items-center gap-3 rounded-none border-b border-zinc-800/50 px-3 py-2 hover:bg-zinc-900/50 transition-colors"
@@ -117,7 +117,6 @@ export function AISettingsDialog({ open, onOpenChange }: AISettingsDialogProps) 
                     <p className="mt-0.5 text-[9px] text-zinc-500">{PROVIDER_INFO[settings[task] as AIProvider].cost}</p>
                   </div>
 
-                  {/* Model selector: horizontal buttons */}
                   <div className="flex gap-1 flex-shrink-0">
                     {(["gemini", "claude"] as const).map((provider) => {
                       const isSelected = settings[task] === provider;
@@ -143,11 +142,10 @@ export function AISettingsDialog({ open, onOpenChange }: AISettingsDialogProps) 
             </div>
           </div>
 
-          {/* Section: Carousel Style */}
           <div>
             <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Carousel Style</p>
             <div className="space-y-1 border-t border-zinc-800">
-              {(["quick_snaps", "curated_series"] as CarouselStyle[]).map((style) => {
+              {CAROUSEL_STYLES.map((style) => {
                 const info = CAROUSEL_STYLE_INFO[style];
                 const isSelected = settings.carouselStyle === style;
                 const Icon = info.icon;
@@ -180,7 +178,6 @@ export function AISettingsDialog({ open, onOpenChange }: AISettingsDialogProps) 
           </div>
         </div>
 
-        {/* Model reference */}
         <div className="border-t border-zinc-800 pt-3">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Models</p>
           <div className="grid grid-cols-2 gap-2 text-[10px]">
@@ -198,7 +195,6 @@ export function AISettingsDialog({ open, onOpenChange }: AISettingsDialogProps) 
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex justify-end gap-2 border-t border-zinc-800 pt-3">
           <Button
             variant="outline"
