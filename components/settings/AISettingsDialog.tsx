@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -13,13 +13,12 @@ import {
   AI_PROVIDER_KEYS,
   AI_PROVIDER_LABELS,
   CAROUSEL_STYLES,
-  loadAISettings,
-  saveAISettings,
   type AISettings,
   type AIProvider,
   type AIProviderKey,
   type CarouselStyle,
 } from "@/lib/ai-settings";
+import { useAISettings } from "@/hooks/use-settings";
 import { Brain, Check, Camera, Layers } from "lucide-react";
 
 interface AISettingsDialogProps {
@@ -63,8 +62,17 @@ const CAROUSEL_STYLE_INFO: Record<CarouselStyle, { label: string; description: s
 };
 
 export function AISettingsDialog({ open, onOpenChange }: AISettingsDialogProps) {
-  const [settings, setSettings] = useState<AISettings>(() => loadAISettings());
+  const { settings: convexSettings, saveAISettings: saveToConvex } = useAISettings();
+  const [settings, setSettings] = useState<AISettings>(convexSettings);
   const [isDirty, setIsDirty] = useState(false);
+
+  // Sync local state when Convex data updates (e.g., on dialog open)
+  useEffect(() => {
+    if (open) {
+      setSettings(convexSettings);
+      setIsDirty(false);
+    }
+  }, [open, convexSettings]);
 
   const handleProviderChange = (task: AIProviderKey, provider: AIProvider) => {
     const updated = { ...settings, [task]: provider };
@@ -77,8 +85,8 @@ export function AISettingsDialog({ open, onOpenChange }: AISettingsDialogProps) 
     setIsDirty(true);
   };
 
-  const handleSave = () => {
-    saveAISettings(settings);
+  const handleSave = async () => {
+    await saveToConvex(settings);
     const claudeCount = AI_PROVIDER_KEYS.filter((key) => settings[key] === "claude").length;
     const geminiCount = AI_PROVIDER_KEYS.length - claudeCount;
     toast.success("AI settings saved", {

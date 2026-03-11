@@ -16,8 +16,6 @@ import { Badge } from "@/components/ui/badge";
 import { Coins, TrendingUp, Cpu, Image as ImageIcon } from "lucide-react";
 import {
   GEMINI_RPD_TIME_ZONE,
-  getCostSettings,
-  saveCostSettings,
   getDailySpend,
   getWeeklySpend,
   getDailyGenerationCount,
@@ -28,6 +26,7 @@ import {
   getWeeklyLLMSpend,
   type CostSettings,
 } from "@/lib/cost-tracker";
+import { useCostSettings } from "@/hooks/use-settings";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -35,7 +34,8 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const [settings, setSettings] = useState<CostSettings>(getCostSettings());
+  const { settings: convexCostSettings, saveCostSettings: saveToConvex } = useCostSettings();
+  const [settings, setSettings] = useState<CostSettings>(convexCostSettings);
   const [dailySpend, setDailySpend] = useState(0);
   const [weeklySpend, setWeeklySpend] = useState(0);
   const [dailyCount, setDailyCount] = useState(0);
@@ -45,11 +45,18 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [geminiDailyCount, setGeminiDailyCount] = useState(0);
   const [claudeDailyCount, setClaudeDailyCount] = useState(0);
 
+  // Sync cost settings from Convex when dialog opens
+  useEffect(() => {
+    if (open) {
+      setSettings(convexCostSettings);
+    }
+  }, [open, convexCostSettings]);
+
+  // Usage stats still come from localStorage (will move to Convex in Phase 2)
   useEffect(() => {
     if (!open) return;
 
     const update = () => {
-      setSettings(getCostSettings());
       setDailySpend(getDailySpend());
       setWeeklySpend(getWeeklySpend());
       setDailyCount(getDailyGenerationCount());
@@ -65,8 +72,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     return () => clearInterval(interval);
   }, [open]);
 
-  const handleSave = () => {
-    saveCostSettings(settings);
+  const handleSave = async () => {
+    await saveToConvex(settings);
     onOpenChange(false);
   };
 

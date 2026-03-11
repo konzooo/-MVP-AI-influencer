@@ -10,7 +10,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Trash2, Plus } from "lucide-react";
-import { loadIdentity, saveIdentity, DEFAULT_IDENTITY, type InfluencerIdentity, type StyleMode, type ContentTheme } from "@/lib/identity";
+import { DEFAULT_IDENTITY, type InfluencerIdentity, type StyleMode, type ContentTheme } from "@/lib/identity";
+import { useIdentity } from "@/hooks/use-settings";
 import { StyleModeCard } from "@/components/identity/StyleModeCard";
 import { ContentThemeCard } from "@/components/identity/ContentThemeCard";
 import {
@@ -23,16 +24,19 @@ import {
 } from "@/components/ui/dialog";
 
 export default function IdentityPage() {
+  const { identity: convexIdentity, isLoading: convexLoading, saveIdentity: saveToConvex } = useIdentity();
   const [identity, setIdentity] = useState<InfluencerIdentity | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
+  // Sync from Convex on load (only once when data arrives)
   useEffect(() => {
-    const loaded = loadIdentity();
-    setIdentity(loaded);
-    setIsLoading(false);
-  }, []);
+    if (!convexLoading && !identity) {
+      setIdentity(convexIdentity);
+      setIsLoading(false);
+    }
+  }, [convexLoading, convexIdentity, identity]);
 
   if (isLoading || !identity) {
     return (
@@ -42,15 +46,15 @@ export default function IdentityPage() {
     );
   }
 
-  const handleSave = () => {
-    saveIdentity(identity);
+  const handleSave = async () => {
+    await saveToConvex(identity);
     setHasChanges(false);
     toast.success("Identity profile saved");
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     setIdentity(DEFAULT_IDENTITY);
-    saveIdentity(DEFAULT_IDENTITY);
+    await saveToConvex(DEFAULT_IDENTITY);
     setHasChanges(false);
     setShowResetConfirm(false);
     toast.success("Identity reset to defaults");

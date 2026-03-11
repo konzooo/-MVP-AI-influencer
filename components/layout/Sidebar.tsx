@@ -35,9 +35,10 @@ export function Sidebar() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [instagramOpen, setInstagramOpen] = useState(false);
-  const [tasks, setTasks] = useState<Task[]>(() => loadTasks());
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   useEffect(() => {
+    setTasks(loadTasks());
     const handler = () => setTasks(loadTasks());
     window.addEventListener(TASKS_UPDATED_EVENT, handler);
 
