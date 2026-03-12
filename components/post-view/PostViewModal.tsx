@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { PostPlan, ReferenceImage, ImagePrompt } from "@/lib/types";
 import { Task } from "@/lib/task-types";
@@ -31,6 +31,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Calendar } from "@/components/ui/calendar";
 import { InstagramPreview } from "@/components/post-manager/InstagramPreview";
 import { PublishProgress } from "@/components/post-manager/PublishProgress";
@@ -72,6 +73,7 @@ import {
   Library,
   Plus,
   PenTool,
+  Smile,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -118,6 +120,422 @@ function getReferencePreviewPath(image: ReferenceImage): string {
   return image.originalPath || image.imagePath;
 }
 
+function parseHashtagsText(value: string): string[] {
+  return value
+    .split(",")
+    .map((tag) => tag.trim().replace(/^#/, ""))
+    .filter(Boolean);
+}
+
+const EMOJI_CATEGORIES = [
+  {
+    id: "smileys",
+    label: "Smileys",
+    emojis: [
+      "\u{1F600}",
+      "\u{1F603}",
+      "\u{1F604}",
+      "\u{1F601}",
+      "\u{1F606}",
+      "\u{1F605}",
+      "\u{1F923}",
+      "\u{1F642}",
+      "\u{1F643}",
+      "\u{1F609}",
+      "\u{1F60A}",
+      "\u{1F607}",
+      "\u{1F970}",
+      "\u{1F60D}",
+      "\u{1F929}",
+      "\u{1F618}",
+      "\u{1F61A}",
+      "\u{1F61C}",
+      "\u{1F61D}",
+      "\u{1F61B}",
+      "\u{1F973}",
+      "\u{1F60E}",
+      "\u{1F60C}",
+      "\u{1F60F}",
+      "\u{1F62C}",
+      "\u{1F92D}",
+      "\u{1F602}",
+      "\u{1F979}",
+      "\u{1F62E}",
+      "\u{1F62F}",
+      "\u{1F62D}",
+      "\u{1FAE0}",
+      "\u{1F97A}",
+      "\u{1F60B}",
+      "\u{1F631}",
+      "\u{1F914}",
+      "\u{1F928}",
+      "\u{1F611}",
+      "\u{1F636}",
+      "\u{1F644}",
+    ],
+  },
+  {
+    id: "people",
+    label: "People",
+    emojis: [
+      "\u{1F44B}",
+      "\u{1F91A}",
+      "\u{1F590}\u{FE0F}",
+      "\u{270C}\u{FE0F}",
+      "\u{1F91F}",
+      "\u{1F918}",
+      "\u{1F90F}",
+      "\u{1F44C}",
+      "\u{1F90C}",
+      "\u{1FAF6}",
+      "\u{1FAF0}",
+      "\u{1F64C}",
+      "\u{1F44F}",
+      "\u{1F932}",
+      "\u{1F64F}",
+      "\u{1F91D}",
+      "\u{1F44D}",
+      "\u{1F44E}",
+      "\u{1F4AA}",
+      "\u{1F90D}",
+      "\u{1FAE1}",
+      "\u{1F485}",
+      "\u{1F487}",
+      "\u{1F483}",
+      "\u{1F57A}",
+      "\u{1F46F}",
+      "\u{1F6B6}",
+      "\u{1F3C3}",
+      "\u{1F3CB}\u{FE0F}",
+      "\u{1F9D8}",
+      "\u{1F9D6}",
+      "\u{1F9D7}",
+      "\u{1F3C4}",
+      "\u{1F6A3}",
+    ],
+  },
+  {
+    id: "symbols",
+    label: "Symbols",
+    emojis: [
+      "\u{2764}\u{FE0F}",
+      "\u{1F9E1}",
+      "\u{1F49B}",
+      "\u{1F49A}",
+      "\u{1F499}",
+      "\u{1FA75}",
+      "\u{1F49C}",
+      "\u{1F90E}",
+      "\u{1F5A4}",
+      "\u{1F497}",
+      "\u{1F496}",
+      "\u{1F495}",
+      "\u{1F493}",
+      "\u{1F49E}",
+      "\u{1F49D}",
+      "\u{1F48C}",
+      "\u{1F48B}",
+      "\u{1F4AF}",
+      "\u{2728}",
+      "\u{2B50}",
+      "\u{1F31F}",
+      "\u{1F525}",
+      "\u{1F4A5}",
+      "\u{1F4AB}",
+      "\u{1F308}",
+      "\u{2600}\u{FE0F}",
+      "\u{1F31E}",
+      "\u{1F31D}",
+      "\u{1F31A}",
+      "\u{26A1}",
+      "\u{1F4A1}",
+      "\u{1F380}",
+      "\u{1F451}",
+      "\u{1F48E}",
+    ],
+  },
+  {
+    id: "animals",
+    label: "Animals",
+    emojis: [
+      "\u{1F43A}",
+      "\u{1F431}",
+      "\u{1F436}",
+      "\u{1F430}",
+      "\u{1F98A}",
+      "\u{1F981}",
+      "\u{1F42F}",
+      "\u{1F42E}",
+      "\u{1F437}",
+      "\u{1F438}",
+      "\u{1F435}",
+      "\u{1F99D}",
+      "\u{1F999}",
+      "\u{1F9A5}",
+      "\u{1F439}",
+      "\u{1F42D}",
+      "\u{1F410}",
+      "\u{1F422}",
+      "\u{1F419}",
+      "\u{1F420}",
+      "\u{1F98B}",
+      "\u{1F41D}",
+      "\u{1F33A}",
+      "\u{1F338}",
+      "\u{1F339}",
+      "\u{1F490}",
+      "\u{1F33B}",
+      "\u{1F340}",
+      "\u{1F342}",
+      "\u{1F334}",
+      "\u{1F333}",
+      "\u{1F30A}",
+    ],
+  },
+  {
+    id: "food",
+    label: "Food",
+    emojis: [
+      "\u{2615}",
+      "\u{1F375}",
+      "\u{1F964}",
+      "\u{1F9CB}",
+      "\u{1F34E}",
+      "\u{1F34F}",
+      "\u{1F351}",
+      "\u{1F352}",
+      "\u{1F353}",
+      "\u{1F95D}",
+      "\u{1FAD0}",
+      "\u{1F34A}",
+      "\u{1F34B}",
+      "\u{1F349}",
+      "\u{1F965}",
+      "\u{1F96D}",
+      "\u{1F966}",
+      "\u{1F955}",
+      "\u{1F95A}",
+      "\u{1F373}",
+      "\u{1F35E}",
+      "\u{1F950}",
+      "\u{1F96F}",
+      "\u{1F95E}",
+      "\u{1F35D}",
+      "\u{1F35C}",
+      "\u{1F354}",
+      "\u{1F355}",
+      "\u{1F35F}",
+      "\u{1F32E}",
+      "\u{1F96A}",
+      "\u{1F36B}",
+      "\u{1F366}",
+      "\u{1F370}",
+      "\u{1F382}",
+      "\u{1F379}",
+      "\u{1F37E}",
+    ],
+  },
+  {
+    id: "activities",
+    label: "Activities",
+    emojis: [
+      "\u{1F3C6}",
+      "\u{1F947}",
+      "\u{1F948}",
+      "\u{1F949}",
+      "\u{26BD}",
+      "\u{1F3C0}",
+      "\u{1F3D0}",
+      "\u{1F3BE}",
+      "\u{1F3C8}",
+      "\u{1F94A}",
+      "\u{1F94B}",
+      "\u{1F3D3}",
+      "\u{1F3F8}",
+      "\u{1F3AF}",
+      "\u{1F3B3}",
+      "\u{1F3AE}",
+      "\u{1F579}\u{FE0F}",
+      "\u{1F3B2}",
+      "\u{1F9E9}",
+      "\u{1F3A8}",
+      "\u{1F3AC}",
+      "\u{1F3A4}",
+      "\u{1F3A7}",
+      "\u{1F3B6}",
+      "\u{1F941}",
+      "\u{1F3B8}",
+      "\u{1F3B9}",
+      "\u{1F4F8}",
+      "\u{1F3A5}",
+      "\u{1F39E}\u{FE0F}",
+      "\u{1F4DA}",
+      "\u{1F58C}\u{FE0F}",
+    ],
+  },
+  {
+    id: "travel",
+    label: "Travel",
+    emojis: [
+      "\u{2708}\u{FE0F}",
+      "\u{1F6E9}\u{FE0F}",
+      "\u{1F6F3}\u{FE0F}",
+      "\u{1F6A4}",
+      "\u{26F5}",
+      "\u{1F6F6}",
+      "\u{1F697}",
+      "\u{1F699}",
+      "\u{1F695}",
+      "\u{1F68C}",
+      "\u{1F69A}",
+      "\u{1F69C}",
+      "\u{1F6B2}",
+      "\u{1F6F4}",
+      "\u{1F6F5}",
+      "\u{1F5FA}\u{FE0F}",
+      "\u{1F30D}",
+      "\u{1F30E}",
+      "\u{1F30F}",
+      "\u{1F3D6}\u{FE0F}",
+      "\u{1F3DD}\u{FE0F}",
+      "\u{1F3D5}\u{FE0F}",
+      "\u{1F3DE}\u{FE0F}",
+      "\u{1F3D4}\u{FE0F}",
+      "\u{1F307}",
+      "\u{1F306}",
+      "\u{1F304}",
+      "\u{1F30C}",
+      "\u{1F3E8}",
+      "\u{1F6CB}\u{FE0F}",
+      "\u{1F6CF}\u{FE0F}",
+      "\u{1F6C1}",
+    ],
+  },
+  {
+    id: "objects",
+    label: "Objects",
+    emojis: [
+      "\u{1F4F1}",
+      "\u{1F4F7}",
+      "\u{1F4BB}",
+      "\u{2328}\u{FE0F}",
+      "\u{1F5A5}\u{FE0F}",
+      "\u{1F4FA}",
+      "\u{1F4FB}",
+      "\u{1F50A}",
+      "\u{1F399}\u{FE0F}",
+      "\u{1F56F}\u{FE0F}",
+      "\u{1F4A1}",
+      "\u{1F6CD}\u{FE0F}",
+      "\u{1F455}",
+      "\u{1F457}",
+      "\u{1F45B}",
+      "\u{1F45C}",
+      "\u{1F45F}",
+      "\u{1F97E}",
+      "\u{1F453}",
+      "\u{1F576}\u{FE0F}",
+      "\u{1F9E5}",
+      "\u{1F484}",
+      "\u{1F48D}",
+      "\u{1F48E}",
+      "\u{1F9F4}",
+      "\u{1F9FC}",
+      "\u{1F6C0}",
+      "\u{1FAA5}",
+      "\u{1F4BC}",
+      "\u{1F4E6}",
+      "\u{1F381}",
+      "\u{1F38A}",
+    ],
+  },
+];
+
+interface EmojiPickerButtonProps {
+  onSelect: (emoji: string) => void;
+  align?: "start" | "center" | "end";
+  side?: "top" | "right" | "bottom" | "left";
+  className?: string;
+}
+
+function EmojiPickerButton({
+  onSelect,
+  align = "end",
+  side = "top",
+  className = "",
+}: EmojiPickerButtonProps) {
+  const [open, setOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState(
+    EMOJI_CATEGORIES[0]?.id ?? "smileys"
+  );
+  const currentCategory =
+    EMOJI_CATEGORIES.find((category) => category.id === activeCategory) ??
+    EMOJI_CATEGORIES[0];
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          aria-label="Open emoji picker"
+          title="Emoji"
+          className={`inline-flex h-7 w-7 items-center justify-center rounded-full border border-zinc-700/70 bg-zinc-900/90 text-zinc-400 backdrop-blur transition-colors hover:bg-zinc-800 hover:text-zinc-100 ${className}`}
+        >
+          <Smile className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align={align}
+        side={side}
+        className="w-[26rem] border-zinc-800 bg-zinc-950 p-2"
+      >
+        <div className="space-y-2">
+          <div className="px-1">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+              Emoji Picker
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {EMOJI_CATEGORIES.map((category) => (
+              <button
+                key={category.id}
+                type="button"
+                onClick={() => setActiveCategory(category.id)}
+                className={`rounded-full px-2 py-1 text-[10px] transition-colors ${
+                  category.id === currentCategory.id
+                    ? "bg-violet-500/15 text-violet-300"
+                    : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                }`}
+              >
+                {category.label}
+              </button>
+            ))}
+          </div>
+          <ScrollArea className="h-64 pr-1">
+            <div className="grid grid-cols-8 gap-1">
+              {currentCategory.emojis.map((emoji, index) => (
+                <button
+                  key={`${currentCategory.id}-${index}`}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    onSelect(emoji);
+                    setOpen(false);
+                  }}
+                  className="flex h-9 w-9 items-center justify-center rounded-md text-lg transition-colors hover:bg-zinc-800"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface PostViewModalProps {
@@ -150,6 +568,7 @@ export function PostViewModal({
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
   const [editingCaption, setEditingCaption] = useState(false);
+  const [editingHashtags, setEditingHashtags] = useState(false);
   const [promptEditMode, setPromptEditMode] = useState(false);
   const [promptHelperOpen, setPromptHelperOpen] = useState(false);
   const [promptHelperIndex, setPromptHelperIndex] = useState<number | null>(
@@ -171,6 +590,7 @@ export function PostViewModal({
   const [hashtagsText, setHashtagsText] = useState("");
   const [captionDirty, setCaptionDirty] = useState(false);
   const [captionHelperOpen, setCaptionHelperOpen] = useState(false);
+  const captionTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Publishing state
   const [isScheduled, setIsScheduled] = useState(false);
@@ -228,6 +648,7 @@ export function PostViewModal({
     setEditingTitle(false);
     setEditingDescription(false);
     setEditingCaption(false);
+    setEditingHashtags(false);
     setPromptEditMode(post.creationMode === "manual");
   }, [post?.id, post?.status]);
 
@@ -383,24 +804,45 @@ export function PostViewModal({
   }, [open, post?.id, post?.selectedCharacterRefId]);
 
   // Auto-save caption/hashtags after 600ms
-  useEffect(() => {
-    if (!captionDirty || !post) return;
-    const timer = setTimeout(() => {
+  const persistCaptionFields = useCallback(
+    (options?: {
+      caption?: string;
+      hashtags?: string;
+      keepEditing?: boolean;
+    }) => {
+      if (!post) return;
+
+      const nextCaption = options?.caption ?? caption;
+      const nextHashtagsText = options?.hashtags ?? hashtagsText;
       const updated: PostPlan = {
         ...post,
-        caption,
-        hashtags: hashtagsText
-          .split(",")
-          .map((t) => t.trim().replace(/^#/, ""))
-          .filter(Boolean),
+        caption: nextCaption,
+        hashtags: parseHashtagsText(nextHashtagsText),
         updatedAt: new Date().toISOString(),
       };
+
       savePost(updated);
       setPost(updated);
-    }, 600);
+      setCaption(nextCaption);
+      setHashtagsText(nextHashtagsText);
+      setCaptionDirty(false);
+
+      if (!options?.keepEditing) {
+        setEditingCaption(false);
+        setEditingHashtags(false);
+      }
+    },
+    [caption, hashtagsText, post]
+  );
+
+  useEffect(() => {
+    if (!captionDirty || !post) return;
+    const timer = setTimeout(
+      () => persistCaptionFields({ keepEditing: true }),
+      600
+    );
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caption, hashtagsText]);
+  }, [captionDirty, persistCaptionFields, post]);
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
 
@@ -423,10 +865,7 @@ export function PostViewModal({
       ...post,
       caption: normalizedCaption,
       hashtags: shouldSyncHashtags
-        ? hashtagsText
-            .split(",")
-            .map((t) => t.trim().replace(/^#/, ""))
-            .filter(Boolean)
+        ? parseHashtagsText(hashtagsText)
         : post.hashtags,
       updatedAt: new Date().toISOString(),
     };
@@ -437,6 +876,40 @@ export function PostViewModal({
     setCaptionDirty(false);
     setEditingCaption(false);
   }, [hashtagsText, post]);
+
+  const handleCaptionChange = useCallback((value: string) => {
+    setCaption(value);
+    setCaptionDirty(true);
+  }, []);
+
+  const handleHashtagsChange = useCallback((value: string) => {
+    setHashtagsText(value);
+    setCaptionDirty(true);
+  }, []);
+
+  const insertEmojiIntoCaption = useCallback(
+    (emoji: string) => {
+      const textarea = captionTextareaRef.current;
+      const selectionStart = textarea?.selectionStart ?? caption.length;
+      const selectionEnd = textarea?.selectionEnd ?? caption.length;
+      const nextCaption =
+        caption.slice(0, selectionStart) +
+        emoji +
+        caption.slice(selectionEnd);
+
+      setCaption(nextCaption);
+      setCaptionDirty(true);
+
+      requestAnimationFrame(() => {
+        const activeTextarea = captionTextareaRef.current;
+        if (!activeTextarea) return;
+        const nextCursor = selectionStart + emoji.length;
+        activeTextarea.focus();
+        activeTextarea.setSelectionRange(nextCursor, nextCursor);
+      });
+    },
+    [caption]
+  );
 
   const handleToggleRef = (ref: ReferenceImage) => {
     if (!post) return;
@@ -655,6 +1128,22 @@ export function PostViewModal({
 
   const handlePublish = async () => {
     if (!post) return;
+    const publishPost =
+      captionDirty && post.status === "ready"
+        ? {
+            ...post,
+            caption,
+            hashtags: visibleHashtags,
+            updatedAt: new Date().toISOString(),
+          }
+        : post;
+
+    if (publishPost !== post) {
+      savePost(publishPost);
+      setPost(publishPost);
+      setCaptionDirty(false);
+    }
+
     let scheduledTimestamp: number | undefined;
     if (isScheduled && scheduledDate) {
       const [hours, minutes] = scheduledTime.split(":").map(Number);
@@ -674,7 +1163,7 @@ export function PostViewModal({
       }
     }
 
-    await actions.publishToInstagram(post, {
+    await actions.publishToInstagram(publishPost, {
       scheduledTime: scheduledTimestamp,
     });
     refreshPost();
@@ -755,6 +1244,10 @@ export function PostViewModal({
   const isApproved = post.status === "approved";
   const isGenerating = post.status === "generating";
   const canEdit = isDraft || isApproved || post.status === "ready";
+  const visibleHashtags = parseHashtagsText(hashtagsText);
+  const effectiveCaption = post.status === "ready" ? caption : post.caption;
+  const effectiveHashtags =
+    post.status === "ready" ? visibleHashtags : post.hashtags;
   const mode = CREATION_MODE_CONFIG[post.creationMode] ?? CREATION_MODE_CONFIG.from_scratch;
   const isManualPost = post.creationMode === "manual";
   const isOwnImageCarousel =
@@ -764,17 +1257,17 @@ export function PostViewModal({
   // Publishing validation
   const selectedImages = post.generatedImages.filter((i) => i.selected);
   const fullCaption =
-    post.caption +
-    (post.hashtags.length
-      ? "\n\n" + post.hashtags.map((t) => `#${t.replace(/^#/, "")}`).join(" ")
+    effectiveCaption +
+    (effectiveHashtags.length
+      ? "\n\n" + effectiveHashtags.map((t) => `#${t.replace(/^#/, "")}`).join(" ")
       : "");
   const captionTooLong = fullCaption.length > 2200;
-  const tooManyHashtags = post.hashtags.length > 30;
+  const tooManyHashtags = effectiveHashtags.length > 30;
   const rateLimitReached = !checkRateLimit();
   const canPublishNow =
     post.status === "ready" &&
     selectedImages.length > 0 &&
-    post.caption.trim().length > 0 &&
+    effectiveCaption.trim().length > 0 &&
     instagram.account.connected &&
     !captionTooLong &&
     !tooManyHashtags &&
@@ -1000,13 +1493,13 @@ export function PostViewModal({
                             e.stopPropagation();
                             setCaptionHelperOpen(true);
                           }}
-                          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-violet-400 transition-colors hover:bg-violet-500/10 hover:text-violet-300"
-                        >
-                          <Sparkles className="h-3 w-3" />
-                          <span>AI Helper</span>
-                        </button>
+                            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-violet-400 transition-colors hover:bg-violet-500/10 hover:text-violet-300"
+                          >
+                            <Sparkles className="h-3 w-3" />
+                            <span>AI Helper</span>
+                          </button>
                       )}
-                      {canEdit && post.caption && !editingCaption && (
+                      {canEdit && caption && !editingCaption && (
                         <button
                           onClick={() => setEditingCaption(true)}
                           className="rounded p-0.5 text-zinc-600 transition-colors hover:text-zinc-300"
@@ -1018,25 +1511,27 @@ export function PostViewModal({
                   </div>
                   <div>
                     {canEdit && editingCaption ? (
-                      <Textarea
-                        value={post.caption}
-                        onChange={(e) => {
-                          const updated = { ...post, caption: e.target.value };
-                          setPost(updated);
-                          setCaption(e.target.value);
-                          savePost(updated);
-                        }}
-                        onBlur={() => setEditingCaption(false)}
-                        autoFocus
-                        className="min-h-[80px] resize-y border-zinc-800 bg-zinc-900 text-sm leading-6 text-zinc-200"
-                      />
-                    ) : post.caption ? (
+                      <div className="relative">
+                        <Textarea
+                          ref={captionTextareaRef}
+                          value={caption}
+                          onChange={(e) => handleCaptionChange(e.target.value)}
+                          onBlur={() => persistCaptionFields()}
+                          autoFocus
+                          className="min-h-[80px] resize-y border-zinc-800 bg-zinc-900 pb-10 pr-11 text-sm leading-6 text-zinc-200"
+                        />
+                        <EmojiPickerButton
+                          onSelect={insertEmojiIntoCaption}
+                          className="absolute bottom-2 right-2 z-10"
+                        />
+                      </div>
+                    ) : caption ? (
                       <div
                         className={`min-h-[80px] rounded-md border border-zinc-800 bg-zinc-900 p-3 ${canEdit ? "cursor-pointer transition-colors hover:bg-zinc-800/70" : ""}`}
                         onClick={() => canEdit && setEditingCaption(true)}
                       >
                         <p className="whitespace-pre-line text-sm leading-6 text-zinc-200">
-                          {post.caption}
+                          {caption}
                         </p>
                       </div>
                     ) : canEdit ? (
@@ -1051,17 +1546,51 @@ export function PostViewModal({
                 </div>
               )}
 
-              {post.hashtags.length > 0 && !isReady && (
-                <div className="flex flex-wrap gap-1.5">
-                  {post.hashtags.map((tag, i) => (
-                    <span
-                      key={i}
-                      className="inline-flex items-center gap-0.5 text-[11px] text-violet-400/80"
+              {(visibleHashtags.length > 0 || canEdit) && !isReady && (
+                <div>
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                      Hashtags
+                    </p>
+                    {canEdit && visibleHashtags.length > 0 && !editingHashtags && (
+                      <button
+                        onClick={() => setEditingHashtags(true)}
+                        className="rounded p-0.5 text-zinc-600 transition-colors hover:text-zinc-300"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                  {canEdit && (editingHashtags || visibleHashtags.length === 0) ? (
+                    <div className="space-y-1">
+                      <Input
+                        value={hashtagsText}
+                        onChange={(e) => handleHashtagsChange(e.target.value)}
+                        onBlur={() => persistCaptionFields()}
+                        autoFocus={editingHashtags && visibleHashtags.length > 0}
+                        className="h-8 border-zinc-800 bg-zinc-900 text-xs"
+                        placeholder="tag1, tag2, tag3"
+                      />
+                      <p className="text-[9px] text-zinc-600">
+                        Comma-separated, # optional
+                      </p>
+                    </div>
+                  ) : visibleHashtags.length > 0 ? (
+                    <div
+                      className={`flex flex-wrap gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 p-3 ${canEdit ? "cursor-pointer transition-colors hover:bg-zinc-800/70" : ""}`}
+                      onClick={() => canEdit && setEditingHashtags(true)}
                     >
-                      <Hash className="h-2.5 w-2.5" />
-                      {tag}
-                    </span>
-                  ))}
+                      {visibleHashtags.map((tag, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-0.5 text-[11px] text-violet-400/80"
+                        >
+                          <Hash className="h-2.5 w-2.5" />
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               )}
 
@@ -1755,32 +2284,36 @@ export function PostViewModal({
                           <label className="text-[10px] font-medium text-zinc-500">
                             Caption
                           </label>
-                          <button
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                            }}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setCaptionHelperOpen(true);
-                            }}
-                            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-violet-400 transition-colors hover:bg-violet-500/10 hover:text-violet-300"
-                          >
-                            <Sparkles className="h-3 w-3" />
-                            <span>AI Helper</span>
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setCaptionHelperOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-violet-400 transition-colors hover:bg-violet-500/10 hover:text-violet-300"
+                            >
+                              <Sparkles className="h-3 w-3" />
+                              <span>AI Helper</span>
+                            </button>
+                          </div>
                         </div>
-                        <div>
+                        <div className="relative">
                           <Textarea
+                            ref={captionTextareaRef}
                             value={caption}
-                            onChange={(e) => {
-                              setCaption(e.target.value);
-                              setCaptionDirty(true);
-                            }}
-                            className="min-h-[100px] resize-none border-zinc-800 bg-zinc-900 text-xs leading-5 text-zinc-100"
+                            onChange={(e) => handleCaptionChange(e.target.value)}
+                            className="min-h-[100px] resize-none border-zinc-800 bg-zinc-900 pb-10 pr-11 text-xs leading-5 text-zinc-100"
                             placeholder="Instagram caption"
+                          />
+                          <EmojiPickerButton
+                            onSelect={insertEmojiIntoCaption}
+                            className="absolute bottom-2 right-2 z-10"
                           />
                         </div>
                       </div>
@@ -1792,10 +2325,7 @@ export function PostViewModal({
                         </label>
                         <Input
                           value={hashtagsText}
-                          onChange={(e) => {
-                            setHashtagsText(e.target.value);
-                            setCaptionDirty(true);
-                          }}
+                          onChange={(e) => handleHashtagsChange(e.target.value)}
                           className="mt-0.5 h-8 border-zinc-800 bg-zinc-900 text-xs"
                           placeholder="tag1, tag2, tag3"
                         />
