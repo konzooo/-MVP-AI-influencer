@@ -54,7 +54,6 @@ import {
   Zap,
   Check,
   Send,
-  GripVertical,
   Sparkles,
   Copy,
   UserRound,
@@ -618,6 +617,16 @@ export function PostViewModal({
     savePost(updated);
   };
 
+  const handleToggleSelect = (imageId: string) => {
+    if (!post) return;
+    const updated = post.generatedImages.map((img) =>
+      img.id === imageId ? { ...img, selected: !img.selected } : img
+    );
+    const updatedPost = { ...post, generatedImages: updated };
+    savePost(updatedPost);
+    setPost(updatedPost);
+  };
+
   const handleApproveAndGenerate = async () => {
     if (!post) return;
     const result = await actions.approveAndGenerate(post, {
@@ -685,17 +694,17 @@ export function PostViewModal({
     e.preventDefault();
     if (draggedIndex === null || draggedIndex === index || !post) return;
 
-    const allImages = [...post.generatedImages];
-    const dragged = allImages[draggedIndex];
-    allImages.splice(draggedIndex, 1);
-    allImages.splice(index, 0, dragged);
+    const selected = post.generatedImages.filter((i) => i.selected);
+    const newSelected = [...selected];
+    const dragged = newSelected[draggedIndex];
+    newSelected.splice(draggedIndex, 1);
+    newSelected.splice(index, 0, dragged);
 
-    // Selection is position-based: first N images are selected
-    const maxSel = post.imagePrompts.length;
-    const reordered = allImages.map((img, i) => ({
-      ...img,
-      selected: i < maxSel,
-    }));
+    const selectedIds = new Set(newSelected.map((img) => img.id));
+    const nonSelected = post.generatedImages.filter(
+      (img) => !selectedIds.has(img.id)
+    );
+    const reordered = [...newSelected, ...nonSelected];
 
     const updated = { ...post, generatedImages: reordered };
     savePost(updated);
@@ -753,7 +762,6 @@ export function PostViewModal({
   const canManuallyToggleStatus = !post.taskId && (isDraft || isApproved);
 
   // Publishing validation
-  const maxSelected = post.imagePrompts.length;
   const selectedImages = post.generatedImages.filter((i) => i.selected);
   const fullCaption =
     post.caption +
@@ -1671,46 +1679,72 @@ export function PostViewModal({
                           <p className="mb-1.5 text-[10px] font-medium text-zinc-500">
                             Image Order{" "}
                             <span className="text-zinc-600">
-                              · drag to reorder · first {maxSelected} are used
+                              · drag to reorder
                             </span>
                           </p>
                           <div className="flex flex-wrap gap-1.5">
-                            {post.generatedImages.map((img, index) => {
-                              const isSelected = index < maxSelected;
-                              return (
+                            {/* Selected images */}
+                            {selectedImages.map((img, index) => (
+                              <div
+                                key={img.id}
+                                draggable
+                                onDragStart={() => handleDragStart(index)}
+                                onDragOver={(e) => handleDragOver(e, index)}
+                                onDragEnd={handleDragEnd}
+                                className="group relative shrink-0 cursor-move overflow-hidden rounded-md border-2 border-violet-600 bg-zinc-900"
+                                style={{ width: "64px" }}
+                              >
+                                <img
+                                  src={img.url}
+                                  alt=""
+                                  className="aspect-square w-full cursor-zoom-in object-cover"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setLightboxUrl(img.url);
+                                  }}
+                                />
+                                <div className="absolute left-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-violet-600 text-[8px] font-semibold text-white">
+                                  {index + 1}
+                                </div>
+                                <button
+                                  className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-600 text-white opacity-0 shadow transition-opacity group-hover:opacity-100"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleSelect(img.id);
+                                  }}
+                                  title="Remove from selection"
+                                >
+                                  <X className="h-2 w-2" />
+                                </button>
+                              </div>
+                            ))}
+                            {/* Unselected images */}
+                            {post.generatedImages
+                              .filter((img) => !img.selected)
+                              .map((img) => (
                                 <div
                                   key={img.id}
-                                  draggable
-                                  onDragStart={() => handleDragStart(index)}
-                                  onDragOver={(e) => handleDragOver(e, index)}
-                                  onDragEnd={handleDragEnd}
-                                  className={`group relative shrink-0 cursor-move overflow-hidden rounded-md border-2 bg-zinc-900 ${
-                                    isSelected
-                                      ? "border-violet-600"
-                                      : "border-zinc-700 opacity-50 hover:opacity-80"
-                                  }`}
+                                  className="group relative shrink-0 cursor-zoom-in overflow-hidden rounded-md border-2 border-zinc-700 bg-zinc-900 opacity-50 hover:opacity-80"
                                   style={{ width: "64px" }}
                                 >
                                   <img
                                     src={img.url}
                                     alt=""
-                                    className="aspect-square w-full cursor-zoom-in object-cover"
+                                    className="aspect-square w-full object-cover"
+                                    onClick={() => setLightboxUrl(img.url)}
+                                  />
+                                  <button
+                                    className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-violet-600 text-white opacity-0 shadow transition-opacity group-hover:opacity-100"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setLightboxUrl(img.url);
+                                      handleToggleSelect(img.id);
                                     }}
-                                  />
-                                  {isSelected && (
-                                    <div className="absolute left-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-violet-600 text-[8px] font-semibold text-white">
-                                      {index + 1}
-                                    </div>
-                                  )}
-                                  <div className="absolute right-0.5 top-0.5 rounded bg-black/60 p-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                                    <GripVertical className="h-2.5 w-2.5 text-zinc-300" />
-                                  </div>
+                                    title="Add to selection"
+                                  >
+                                    <Plus className="h-2 w-2" />
+                                  </button>
                                 </div>
-                              );
-                            })}
+                              ))}
                           </div>
                         </div>
                       )}
