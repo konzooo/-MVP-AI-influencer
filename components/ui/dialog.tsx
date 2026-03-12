@@ -55,6 +55,8 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
+  const ariaDescribedBy = props["aria-describedby"]
+
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -65,6 +67,7 @@ function DialogContent({
           className
         )}
         {...props}
+        aria-describedby={ariaDescribedBy ?? undefined}
       >
         {children}
         {showCloseButton && (

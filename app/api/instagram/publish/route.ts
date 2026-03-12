@@ -34,6 +34,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (scheduledTime) {
+      return NextResponse.json(
+        {
+          error:
+            "Instagram scheduling is handled by the app scheduler. Save the post as scheduled and let the due-post runner publish it.",
+          retryable: false,
+        },
+        { status: 400 }
+      );
+    }
+
     // Verify all image URLs are accessible
     const verifications = await Promise.all(
       imageUrls.map((url: string) => verifyImageUrl(url))
@@ -58,7 +69,6 @@ export async function POST(request: NextRequest) {
         imageUrls,
         caption: caption || "",
         hashtags: hashtags || [],
-        scheduledTime,
       });
     } else {
       // Single image (or carousel with only 1 image)
@@ -66,7 +76,6 @@ export async function POST(request: NextRequest) {
         imageUrl: imageUrls[0],
         caption: caption || "",
         hashtags: hashtags || [],
-        scheduledTime,
       });
     }
 
@@ -81,7 +90,7 @@ export async function POST(request: NextRequest) {
       success: true,
       igPostId: result.igPostId,
       permalink: result.permalink,
-      scheduled: !!scheduledTime,
+      scheduled: false,
     });
   } catch (error) {
     console.error("Instagram publish error:", error);

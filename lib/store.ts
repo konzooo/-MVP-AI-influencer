@@ -59,6 +59,20 @@ export async function loadPostsAsync(): Promise<PostPlan[]> {
 }
 
 /**
+ * Save a post to Convex from async/server code.
+ */
+export async function savePostAsync(post: PostPlan): Promise<void> {
+  const updated = { ...post, updatedAt: new Date().toISOString() };
+  const stripped = stripLargeData(updated);
+  const client = getConvexClient();
+
+  await client.mutation(api.posts.save, {
+    postId: stripped.id,
+    data: JSON.stringify(stripped),
+  });
+}
+
+/**
  * Synchronous loadPosts — reads from localStorage cache.
  * The usePostStore hook keeps this cache updated from Convex.
  * Falls back to the old localStorage key for pre-migration data.

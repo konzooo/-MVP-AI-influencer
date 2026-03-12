@@ -338,6 +338,20 @@ export function usePostActions() {
         return;
       }
 
+      if (options?.scheduledTime) {
+        const scheduled: PostPlan = {
+          ...post,
+          status: "scheduled",
+          publishingInfo: {
+            status: "scheduled",
+            scheduledFor: new Date(options.scheduledTime * 1000).toISOString(),
+          },
+        };
+        savePost(scheduled);
+        toast.success("Post scheduled successfully!");
+        return;
+      }
+
       if (!canPublish()) {
         toast.error("Daily post limit reached (25/25)");
         return;
@@ -361,7 +375,6 @@ export function usePostActions() {
             caption: post.caption,
             hashtags: post.hashtags,
             postType: post.postType,
-            scheduledTime: options?.scheduledTime,
           }),
         });
 
@@ -381,35 +394,19 @@ export function usePostActions() {
           return;
         }
 
-        if (data.scheduled) {
-          const scheduled: PostPlan = {
-            ...post,
-            status: "scheduled",
-            publishingInfo: {
-              status: "scheduled",
-              igPostId: data.igPostId,
-              scheduledFor: options?.scheduledTime
-                ? new Date(options.scheduledTime * 1000).toISOString()
-                : undefined,
-            },
-          };
-          savePost(scheduled);
-          toast.success("Post scheduled successfully!");
-        } else {
-          recordPublish();
-          const posted: PostPlan = {
-            ...post,
-            status: "posted",
-            publishingInfo: {
-              status: "published",
-              igPostId: data.igPostId,
-              permalink: data.permalink,
-              publishedAt: new Date().toISOString(),
-            },
-          };
-          savePost(posted);
-          toast.success("Published to Instagram!");
-        }
+        recordPublish();
+        const posted: PostPlan = {
+          ...post,
+          status: "posted",
+          publishingInfo: {
+            status: "published",
+            igPostId: data.igPostId,
+            permalink: data.permalink,
+            publishedAt: new Date().toISOString(),
+          },
+        };
+        savePost(posted);
+        toast.success("Published to Instagram!");
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Network error";

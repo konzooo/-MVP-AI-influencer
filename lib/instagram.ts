@@ -435,7 +435,6 @@ export async function publishSingleImage(params: {
   imageUrl: string;
   caption: string;
   hashtags: string[];
-  scheduledTime?: number;
 }): Promise<PublishResult> {
   const auth = await loadAuth();
   if (!auth || isTokenExpired(auth)) {
@@ -453,11 +452,6 @@ export async function publishSingleImage(params: {
       caption: fullCaption,
     };
 
-    if (params.scheduledTime) {
-      containerParams.published = "false";
-      containerParams.scheduled_publish_time = String(params.scheduledTime);
-    }
-
     const containerId = await createMediaContainer(auth.igUserId, auth.accessToken, containerParams);
 
     const status = await pollContainerStatus(containerId, auth.accessToken);
@@ -467,10 +461,6 @@ export async function publishSingleImage(params: {
         error: status.errorMessage || "Container processing failed",
         retryable: true,
       };
-    }
-
-    if (params.scheduledTime) {
-      return { success: true, igPostId: containerId };
     }
 
     const postId = await publishContainer(auth.igUserId, containerId, auth.accessToken);
@@ -488,7 +478,6 @@ export async function publishCarousel(params: {
   imageUrls: string[];
   caption: string;
   hashtags: string[];
-  scheduledTime?: number;
 }): Promise<PublishResult> {
   const auth = await loadAuth();
   if (!auth || isTokenExpired(auth)) {
@@ -540,11 +529,6 @@ export async function publishCarousel(params: {
       caption: fullCaption,
     };
 
-    if (params.scheduledTime) {
-      carouselParams.published = "false";
-      carouselParams.scheduled_publish_time = String(params.scheduledTime);
-    }
-
     const carouselId = await createMediaContainer(auth.igUserId, auth.accessToken, carouselParams);
 
     const carouselStatus = await pollContainerStatus(carouselId, auth.accessToken);
@@ -554,10 +538,6 @@ export async function publishCarousel(params: {
         error: carouselStatus.errorMessage || "Carousel processing failed",
         retryable: true,
       };
-    }
-
-    if (params.scheduledTime) {
-      return { success: true, igPostId: carouselId };
     }
 
     const postId = await publishContainer(auth.igUserId, carouselId, auth.accessToken);

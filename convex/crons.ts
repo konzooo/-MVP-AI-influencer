@@ -9,4 +9,10 @@ crons.interval(
   internal.taskRunner.checkDueTasks
 );
 
+crons.interval(
+  "run-due-posts",
+  { minutes: 1 },
+  internal.taskRunner.checkDuePosts
+);
+
 export default crons;
