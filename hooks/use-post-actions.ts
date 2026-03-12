@@ -267,7 +267,7 @@ export function usePostActions() {
                   numVariations,
                   enableSafetyChecker: settings?.enableSafetyChecker ?? true,
                 },
-                selected: false,
+                selected: true,
                 createdAt: new Date().toISOString(),
                 promptIndex: slideIndex,
               });
@@ -275,10 +275,15 @@ export function usePostActions() {
           }
         }
 
-        // Add new images, keep existing. Don't change status.
+        // Deselect old images for this slide, add new ones (selected) at front
+        const updatedExisting = post.generatedImages.map((img) =>
+          img.promptIndex === slideIndex && img.selected
+            ? { ...img, selected: false }
+            : img
+        );
         const updatedPost: PostPlan = {
           ...post,
-          generatedImages: [...allNewImages, ...post.generatedImages],
+          generatedImages: [...allNewImages, ...updatedExisting],
         };
         savePost(updatedPost);
         saveGeneratedImagesToLibrary(allNewImages, {
