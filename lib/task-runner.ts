@@ -164,8 +164,24 @@ function getFilledImageForPrompt(post: PostPlan, promptIdx: number) {
   );
 }
 
+function getInternalApiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+
+  return (
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    "http://localhost:3000"
+  );
+}
+
+function getInternalApiUrl(path: string): string {
+  return new URL(path, getInternalApiBaseUrl()).toString();
+}
+
 async function uploadImageSource(source: string): Promise<string> {
-  const response = await fetch("/api/upload", {
+  const response = await fetch(getInternalApiUrl("/api/upload"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(
@@ -230,7 +246,7 @@ export async function generatePostImages(
       log.add(`Using stored character reference (legacy): ${post.selectedCharacterRefId}`);
     } else {
       log.add(`No stored ref — fetching reference library...`);
-      const refsRes = await fetch("/api/reference-images");
+      const refsRes = await fetch(getInternalApiUrl("/api/reference-images"));
       if (!refsRes.ok) {
         result.error = "Could not fetch reference library";
         log.add(`ERROR: ${result.error}`);
@@ -269,11 +285,7 @@ export async function generatePostImages(
     }
 
     // Upload all character references to fal storage so they're publicly accessible
-    const baseUrl =
-      process.env.NEXT_PUBLIC_BASE_URL ||
-      (typeof window !== "undefined"
-        ? window.location.origin
-        : "http://localhost:3000");
+    const baseUrl = getInternalApiBaseUrl();
     const charRefUrls: string[] = [];
 
     for (const ref of charRefPaths) {
@@ -369,7 +381,7 @@ export async function generatePostImages(
       }
 
       try {
-        const generateRes = await fetch("/api/generate", {
+        const generateRes = await fetch(getInternalApiUrl("/api/generate"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -545,7 +557,7 @@ export async function runTask(
       if (selectedItem.postType === "carousel") {
         // POST /api/expand-carousel
         log.add(`Calling expand-carousel API for user image (using ${aiSettings.expandCarousel})...`);
-        const expandRes = await fetch("/api/expand-carousel", {
+        const expandRes = await fetch(getInternalApiUrl("/api/expand-carousel"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -599,7 +611,7 @@ export async function runTask(
       } else {
         // POST /api/analyze-images (single or story)
         log.add(`Calling analyze-images API for user image (using ${aiSettings.analyzeImages})...`);
-        const analyzeRes = await fetch("/api/analyze-images", {
+        const analyzeRes = await fetch(getInternalApiUrl("/api/analyze-images"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -646,7 +658,7 @@ export async function runTask(
     } else if (selectedItem.type === "copy_post") {
       // POST /api/brainstorm (copy_post mode)
       log.add(`Calling brainstorm API in copy_post mode (using ${aiSettings.brainstormCopyPost})...`);
-      const brainstormRes = await fetch("/api/brainstorm", {
+      const brainstormRes = await fetch(getInternalApiUrl("/api/brainstorm"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -685,7 +697,7 @@ export async function runTask(
         identity
       );
       log.add(`Calling brainstorm API in from_scratch mode (using ${aiSettings.brainstormFromScratch})...`);
-      const brainstormRes = await fetch("/api/brainstorm", {
+      const brainstormRes = await fetch(getInternalApiUrl("/api/brainstorm"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -727,7 +739,7 @@ export async function runTask(
     // (so it stays consistent across modal opens and generation)
     if (post.creationMode !== "from_own_images") {
       try {
-        const refsRes = await fetch("/api/reference-images");
+        const refsRes = await fetch(getInternalApiUrl("/api/reference-images"));
         if (refsRes.ok) {
           const refsData = await refsRes.json();
           const refs: ReferenceImage[] = refsData.images || [];
@@ -818,7 +830,7 @@ export async function runTask(
     log.add(`Attempting to publish to Instagram...`);
 
     // Check Instagram connection
-    const accountRes = await fetch("/api/instagram/account");
+    const accountRes = await fetch(getInternalApiUrl("/api/instagram/account"));
     const account = await accountRes.json();
 
     if (!account.connected) {
@@ -827,7 +839,7 @@ export async function runTask(
       log.add(`WARNING: Daily Instagram post limit reached`);
     } else {
       try {
-        const publishRes = await fetch("/api/instagram/publish", {
+        const publishRes = await fetch(getInternalApiUrl("/api/instagram/publish"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

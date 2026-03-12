@@ -10,17 +10,29 @@ import { api } from "@/convex/_generated/api";
  * Keeps URLs (FAL, Convex storage) and userProvided base64 images.
  */
 function stripLargeData(post: PostPlan): PostPlan {
+  const imagePrompts = Array.isArray(post.imagePrompts) ? post.imagePrompts : [];
+  const generatedImages = Array.isArray(post.generatedImages) ? post.generatedImages : [];
+
   return {
     ...post,
+    hashtags: Array.isArray(post.hashtags) ? post.hashtags : [],
+    generationHistory: Array.isArray(post.generationHistory) ? post.generationHistory : [],
     referenceImages: [],
-    imagePrompts: post.imagePrompts.map((ip) => ({
+    imagePrompts: imagePrompts.map((ip) => ({
       ...ip,
-      referenceImages: ip.referenceImages.filter((r) => !r.startsWith("data:")),
+      referenceImages: Array.isArray(ip.referenceImages)
+        ? ip.referenceImages.filter((r) => !r.startsWith("data:"))
+        : [],
     })),
-    generatedImages: post.generatedImages
+    generatedImages: generatedImages
       .map((img) => ({
         ...img,
-        url: !img.userProvided && img.url.startsWith("data:") ? "" : img.url,
+        url:
+          typeof img.url !== "string"
+            ? ""
+            : !img.userProvided && img.url.startsWith("data:")
+              ? ""
+              : img.url,
       }))
       .filter((img) => img.url),
   };
