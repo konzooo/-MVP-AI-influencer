@@ -1126,8 +1126,46 @@ export function PostViewModal({
     refreshPost();
   };
 
+  const getScheduledTimestamp = () => {
+    if (!isScheduled) return undefined;
+    if (!scheduledDate) {
+      toast.error("Choose a date before scheduling the post.");
+      return null;
+    }
+
+    const [hours, minutes] = scheduledTime.split(":").map(Number);
+    const dt = new Date(scheduledDate);
+    dt.setHours(hours, minutes, 0, 0);
+    const scheduledTimestamp = Math.floor(dt.getTime() / 1000);
+
+    const minTime = Math.floor(Date.now() / 1000) + 10 * 60;
+    const maxTime = Math.floor(Date.now() / 1000) + 75 * 24 * 60 * 60;
+    if (scheduledTimestamp < minTime) {
+      toast.error("Scheduled time must be at least 10 minutes from now.");
+      return null;
+    }
+    if (scheduledTimestamp > maxTime) {
+      toast.error("Scheduled time must be within 75 days.");
+      return null;
+    }
+
+    return scheduledTimestamp;
+  };
+
   const handlePublish = async () => {
     if (!post) return;
+    const scheduledTimestamp = getScheduledTimestamp();
+    if (scheduledTimestamp === null) return;
+    if (
+      !window.confirm(
+        isScheduled
+          ? "Schedule this post?"
+          : "Publish this post to Instagram now?"
+      )
+    ) {
+      return;
+    }
+
     const publishPost =
       captionDirty && post.status === "ready"
         ? {
@@ -1142,25 +1180,6 @@ export function PostViewModal({
       savePost(publishPost);
       setPost(publishPost);
       setCaptionDirty(false);
-    }
-
-    let scheduledTimestamp: number | undefined;
-    if (isScheduled && scheduledDate) {
-      const [hours, minutes] = scheduledTime.split(":").map(Number);
-      const dt = new Date(scheduledDate);
-      dt.setHours(hours, minutes, 0, 0);
-      scheduledTimestamp = Math.floor(dt.getTime() / 1000);
-
-      const minTime = Math.floor(Date.now() / 1000) + 10 * 60;
-      const maxTime = Math.floor(Date.now() / 1000) + 75 * 24 * 60 * 60;
-      if (scheduledTimestamp < minTime) {
-        toast.error("Scheduled time must be at least 10 minutes from now.");
-        return;
-      }
-      if (scheduledTimestamp > maxTime) {
-        toast.error("Scheduled time must be within 75 days.");
-        return;
-      }
     }
 
     await actions.publishToInstagram(publishPost, {
@@ -1273,6 +1292,7 @@ export function PostViewModal({
     !tooManyHashtags &&
     !rateLimitReached &&
     !actions.isPublishing;
+  const canSubmitPublish = canPublishNow && (!isScheduled || !!scheduledDate);
 
   // Resolve inspiration item from task
   const inspirationItem = task?.inspirationItems.find(
@@ -2655,7 +2675,7 @@ export function PostViewModal({
                 {post.status === "ready" && (
                   <Button
                     onClick={handlePublish}
-                    disabled={!canPublishNow}
+                    disabled={!canSubmitPublish}
                     className="bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
                   >
                     <Send className="mr-1.5 h-4 w-4" />
