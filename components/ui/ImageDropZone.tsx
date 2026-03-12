@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback, useEffect, useState } from "react";
 import { Upload, X, ImagePlus } from "lucide-react";
 
 interface ImageDropZoneProps {
@@ -20,6 +20,7 @@ export function ImageDropZone({
   acceptPaste = true,
 }: ImageDropZoneProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
 
   const addImageFromFile = useCallback(
     (file: File) => {
@@ -103,9 +104,13 @@ export function ImageDropZone({
                 <img
                   src={img}
                   alt={`Image ${i + 1}`}
-                  className={`rounded-md object-cover ${
+                  className={`rounded-md object-cover cursor-zoom-in ${
                     large ? "h-28 w-28" : "h-14 w-14"
                   }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPreviewSrc(img);
+                  }}
                 />
                 <button
                   onClick={(e) => {
@@ -141,6 +146,19 @@ export function ImageDropZone({
         onChange={handleFileInput}
         className="hidden"
       />
+      {previewSrc && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setPreviewSrc(null)}
+        >
+          <img
+            src={previewSrc}
+            alt="Preview"
+            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </>
   );
 }

@@ -1674,16 +1674,17 @@ export function PostViewModal({
 
                     {/* Right: Edit panel */}
                     <div className="space-y-3">
-                      {/* Image reorder */}
-                      {selectedImages.length > 1 && (
+                      {/* Image reorder + pool */}
+                      {post.generatedImages.length > 1 && (
                         <div>
                           <p className="mb-1.5 text-[10px] font-medium text-zinc-500">
                             Image Order{" "}
                             <span className="text-zinc-600">
-                              · drag to reorder
+                              · drag to reorder · click grey to swap in
                             </span>
                           </p>
                           <div className="flex flex-wrap gap-1.5">
+                            {/* Selected images — purple, draggable */}
                             {selectedImages.map((img, index) => (
                               <div
                                 key={img.id}
@@ -1701,16 +1702,61 @@ export function PostViewModal({
                                 <img
                                   src={img.url}
                                   alt=""
-                                  className="aspect-square w-full object-cover"
+                                  className="aspect-square w-full cursor-zoom-in object-cover"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setLightboxUrl(img.url);
+                                  }}
                                 />
                                 <div className="absolute left-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-violet-600 text-[8px] font-semibold text-white">
                                   {index + 1}
                                 </div>
-                                <div className="absolute right-0.5 top-0.5 rounded bg-black/60 p-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                                  <GripVertical className="h-2.5 w-2.5 text-zinc-300" />
+                                <div className="absolute right-0.5 top-0.5 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                                  <button
+                                    className="rounded bg-black/60 p-0.5"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleSelect(img.id);
+                                    }}
+                                    title="Remove from selection"
+                                  >
+                                    <X className="h-2.5 w-2.5 text-zinc-300" />
+                                  </button>
+                                  <div className="rounded bg-black/60 p-0.5">
+                                    <GripVertical className="h-2.5 w-2.5 text-zinc-300" />
+                                  </div>
                                 </div>
                               </div>
                             ))}
+                            {/* Unselected images — grey, click to toggle */}
+                            {post.generatedImages
+                              .filter((img) => !img.selected)
+                              .map((img) => (
+                                <div
+                                  key={img.id}
+                                  className="group relative shrink-0 cursor-pointer overflow-hidden rounded-md border-2 border-zinc-700 bg-zinc-900 opacity-50 transition-opacity hover:opacity-80"
+                                  style={{ width: "64px" }}
+                                  onClick={() =>
+                                    handleToggleSelect(img.id)
+                                  }
+                                >
+                                  <img
+                                    src={img.url}
+                                    alt=""
+                                    className="aspect-square w-full object-cover"
+                                  />
+                                  <button
+                                    className="absolute left-0.5 top-0.5 rounded bg-black/60 p-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setLightboxUrl(img.url);
+                                    }}
+                                    title="Preview"
+                                  >
+                                    <ZoomIn className="h-2.5 w-2.5 text-zinc-300" />
+                                  </button>
+                                </div>
+                              ))}
                           </div>
                         </div>
                       )}
