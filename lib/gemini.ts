@@ -21,7 +21,7 @@ function getSystemPrompt(mode: CreationMode, carouselStyle: CarouselStyle = "qui
 
 export interface BrainstormRequest {
   idea: string;
-  images: string[]; // base64 data URIs
+  images: string[]; // base64 data URIs or remote image URLs
   creationMode: CreationMode;
   postType: PostType;
 }
@@ -32,6 +32,39 @@ interface GeminiPart {
     mimeType: string;
     data: string;
   };
+}
+
+async function toGeminiInlineData(image: string): Promise<GeminiPart["inlineData"] | null> {
+  const dataUriMatch = image.match(/^data:(.+?);base64,(.+)$/);
+  if (dataUriMatch) {
+    return {
+      mimeType: dataUriMatch[1],
+      data: dataUriMatch[2],
+    };
+  }
+
+  if (!image.startsWith("http://") && !image.startsWith("https://")) {
+    return null;
+  }
+
+  const response = await fetch(image);
+  if (!response.ok) {
+    throw new Error(`Failed to load image for Gemini: ${response.status}`);
+  }
+
+  return {
+    mimeType: response.headers.get("content-type") || "image/jpeg",
+    data: Buffer.from(await response.arrayBuffer()).toString("base64"),
+  };
+}
+
+async function appendGeminiImages(parts: GeminiPart[], images: string[]): Promise<void> {
+  for (const image of images) {
+    const inlineData = await toGeminiInlineData(image);
+    if (inlineData) {
+      parts.push({ inlineData });
+    }
+  }
 }
 
 // ─── Shared Gemini request with timeout and rate-limit handling ──────────────
@@ -109,18 +142,7 @@ export async function brainstormWithGemini(
 
   parts.push({ text: contextParts.join("\n") });
 
-  // Add images
-  for (const dataUri of req.images) {
-    const match = dataUri.match(/^data:(.+?);base64,(.+)$/);
-    if (match) {
-      parts.push({
-        inlineData: {
-          mimeType: match[1],
-          data: match[2],
-        },
-      });
-    }
-  }
+  await appendGeminiImages(parts, req.images);
 
   if (parts.length === 0) {
     throw new Error("Please provide an idea or upload an image");
@@ -152,7 +174,7 @@ export async function brainstormWithGemini(
 const ANALYZE_OWN_IMAGES_PROMPT = DEFAULT_TRANSPARENCY.geminiPrompts.analyzeOwnImagesPrompt;
 
 export async function analyzeImagesWithGemini(
-  images: string[], // base64 data URIs
+  images: string[], // base64 data URIs or remote image URLs
   notes: string, // optional user notes about caption style, context, etc.
   apiKey: string,
   personaContext?: string
@@ -167,18 +189,7 @@ export async function analyzeImagesWithGemini(
 
   parts.push({ text: userMessage });
 
-  // Add images
-  for (const dataUri of images) {
-    const match = dataUri.match(/^data:(.+?);base64,(.+)$/);
-    if (match) {
-      parts.push({
-        inlineData: {
-          mimeType: match[1],
-          data: match[2],
-        },
-      });
-    }
-  }
+  await appendGeminiImages(parts, images);
 
   let systemPrompt = ANALYZE_OWN_IMAGES_PROMPT;
   if (personaContext) {
@@ -205,7 +216,7 @@ export async function analyzeImagesWithGemini(
 const EXPAND_OWN_IMAGE_CAROUSEL_PROMPT = DEFAULT_TRANSPARENCY.geminiPrompts.expandCarouselPrompt;
 
 export async function expandOwnImageForCarousel(
-  image: string, // base64 data URI of the user's image
+  image: string, // base64 data URI or remote image URL of the user's image
   notes: string,
   apiKey: string,
   personaContext?: string,
@@ -221,20 +232,20 @@ export async function expandOwnImageForCarousel(
 
   parts.push({ text: userMessage });
 
-  // Add image
-  const match = image.match(/^data:(.+?);base64,(.+)$/);
-  if (match) {
-    parts.push({
-      inlineData: {
-        mimeType: match[1],
-        data: match[2],
-      },
-    });
-    console.log("[Gemini] expandOwnImageForCarousel: image attached, mimeType:", match[1], "size:", Math.round(match[2].length / 1024), "KB");
-  } else {
-    console.error("[Gemini] expandOwnImageForCarousel: image is not a valid base64 data URI, starts with:", image.slice(0, 50));
-    throw new Error("Invalid image format — expected base64 data URI");
+  const inlineData = await toGeminiInlineData(image);
+  if (!inlineData) {
+    console.error("[Gemini] expandOwnImageForCarousel: unsupported image source, starts with:", image.slice(0, 50));
+    throw new Error("Invalid image format — expected base64 data URI or remote image URL");
   }
+
+  parts.push({ inlineData });
+  console.log(
+    "[Gemini] expandOwnImageForCarousel: image attached, mimeType:",
+    inlineData.mimeType,
+    "size:",
+    Math.round(inlineData.data.length / 1024),
+    "KB"
+  );
 
   let systemPrompt = resolveCarouselStyle(EXPAND_OWN_IMAGE_CAROUSEL_PROMPT, carouselStyle || "quick_snaps");
   if (personaContext) {

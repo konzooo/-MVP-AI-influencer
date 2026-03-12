@@ -96,6 +96,17 @@ async function uploadImageSource(source: string): Promise<string> {
   return data.url as string;
 }
 
+async function readApiError(response: Response): Promise<string> {
+  const text = await response.text();
+
+  try {
+    const parsed = JSON.parse(text) as { error?: string; message?: string };
+    return parsed.error || parsed.message || text;
+  } catch {
+    return text;
+  }
+}
+
 // ─── Standalone generation function ──────────────────────────────────────────
 // Can be called independently from the task runner (e.g. from the modal approve flow)
 
@@ -286,7 +297,7 @@ export async function generatePostImages(
         });
 
         if (!generateRes.ok) {
-          const err = await generateRes.text();
+          const err = await readApiError(generateRes);
           log.add(`WARNING: Generation failed for prompt ${promptIdx}: ${err}`);
           continue;
         }
@@ -461,7 +472,7 @@ export async function runTask(
         });
 
         if (!expandRes.ok) {
-          const err = await expandRes.text();
+          const err = await readApiError(expandRes);
           result.error = `Expand carousel failed: ${err}`;
           log.add(`ERROR: ${result.error}`);
           return result;
@@ -514,7 +525,7 @@ export async function runTask(
         });
 
         if (!analyzeRes.ok) {
-          const err = await analyzeRes.text();
+          const err = await readApiError(analyzeRes);
           result.error = `Analyze images failed: ${err}`;
           log.add(`ERROR: ${result.error}`);
           return result;
@@ -564,7 +575,7 @@ export async function runTask(
       });
 
       if (!brainstormRes.ok) {
-        const err = await brainstormRes.text();
+        const err = await readApiError(brainstormRes);
         result.error = `Brainstorm failed: ${err}`;
         log.add(`ERROR: ${result.error}`);
         return result;
@@ -603,7 +614,7 @@ export async function runTask(
       });
 
       if (!brainstormRes.ok) {
-        const err = await brainstormRes.text();
+        const err = await readApiError(brainstormRes);
         result.error = `Brainstorm failed: ${err}`;
         log.add(`ERROR: ${result.error}`);
         return result;
