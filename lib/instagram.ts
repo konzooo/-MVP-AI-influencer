@@ -108,7 +108,7 @@ export function getOAuthUrl(appId: string, redirectUri: string): string {
     scope: "instagram_business_basic,instagram_content_publish",
     response_type: "code",
   });
-  return `https://www.facebook.com/dialog/oauth?${params.toString()}`;
+  return `https://api.instagram.com/oauth/authorize?${params.toString()}`;
 }
 
 export async function exchangeCodeForToken(
@@ -118,12 +118,17 @@ export async function exchangeCodeForToken(
   redirectUri: string
 ): Promise<{ accessToken: string; userId: string }> {
   // Step 1: Exchange code for short-lived token
-  const shortLivedRes = await fetch("https://graph.facebook.com/oauth/access_token?" + new URLSearchParams({
-    client_id: appId,
-    client_secret: appSecret,
-    redirect_uri: redirectUri,
-    code,
-  }));
+  const shortLivedRes = await fetch("https://api.instagram.com/oauth/access_token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: appId,
+      client_secret: appSecret,
+      grant_type: "authorization_code",
+      redirect_uri: redirectUri,
+      code,
+    }),
+  });
 
   if (!shortLivedRes.ok) {
     const err = await shortLivedRes.text();
@@ -132,15 +137,7 @@ export async function exchangeCodeForToken(
 
   const shortLived = await shortLivedRes.json();
   const shortToken = shortLived.access_token;
-
-  // Step 1b: Get the Instagram user ID from the token
-  const meRes = await fetch(`https://graph.instagram.com/v21.0/me?fields=user_id&access_token=${shortToken}`);
-  if (!meRes.ok) {
-    const err = await meRes.text();
-    throw new Error(`Failed to get Instagram user ID: ${err}`);
-  }
-  const meData = await meRes.json();
-  const userId = String(meData.user_id);
+  const userId = String(shortLived.user_id);
 
   // Step 2: Exchange short-lived for long-lived token
   const longLivedRes = await fetch(
