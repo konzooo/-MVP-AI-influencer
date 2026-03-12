@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,49 @@ import { PostViewModal } from "@/components/post-view/PostViewModal";
 
 type RunStatus = "idle" | "running" | "done" | "error";
 
+function formatDateTimeLocal(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function addCadence(date: Date, task: Task): Date {
+  const next = new Date(date);
+  if (task.cadence.unit === "days") {
+    next.setDate(next.getDate() + task.cadence.every);
+  } else {
+    next.setDate(next.getDate() + task.cadence.every * 7);
+  }
+  return next;
+}
+
+function getSuggestedNextRun(task: Task): Date {
+  if (task.nextRunAt) {
+    return new Date(task.nextRunAt);
+  }
+
+  const now = new Date();
+
+  if (task.scheduledTime) {
+    const next = new Date(now);
+    const [hours, minutes] = task.scheduledTime.split(":").map(Number);
+    next.setHours(hours, minutes, 0, 0);
+
+    if (next <= now) {
+      return addCadence(next, task);
+    }
+
+    return next;
+  }
+
+  const next = new Date(now);
+  next.setMinutes(next.getMinutes() + 15, 0, 0);
+  return next;
+}
+
 export default function TaskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
@@ -31,6 +74,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [runLog, setRunLog] = useState<string[]>([]);
   const [modalPostId, setModalPostId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const scheduleInputRef = useRef<HTMLInputElement | null>(null);
 
   const task = getTask(id);
 
@@ -43,6 +87,8 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   const taskPosts = posts.filter((p) => p.taskId === task.id);
+  const scheduleDefaultValue = formatDateTimeLocal(getSuggestedNextRun(task));
+  const scheduleInputKey = `${task.status}-${task.nextRunAt ?? "none"}-${task.scheduledTime ?? "none"}`;
 
   // ─── Task CRUD ──────────────────────────────────────────────────────────────
 
@@ -89,33 +135,41 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
   // ─── Scheduler controls ──────────────────────────────────────────────────────
 
-  const handleStart = () => {
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2, "0");
-    const mm = String(now.getMinutes()).padStart(2, "0");
-    const scheduledTime = `${hh}:${mm}`;
+  const getScheduledRunDate = () => {
+    const rawValue = scheduleInputRef.current?.value || scheduleDefaultValue;
 
-    // Compute first nextRunAt: now + cadence at today's time
-    const firstNext = new Date(now);
-    if (task.cadence.unit === "days") {
-      firstNext.setDate(firstNext.getDate() + task.cadence.every);
-    } else {
-      firstNext.setDate(firstNext.getDate() + task.cadence.every * 7);
+    if (!rawValue) {
+      toast.error("Choose when the next run should happen");
+      return null;
     }
-    firstNext.setHours(now.getHours(), now.getMinutes(), 0, 0);
+
+    const scheduledRun = new Date(rawValue);
+    if (Number.isNaN(scheduledRun.getTime())) {
+      toast.error("Enter a valid schedule time");
+      return null;
+    }
+
+    if (scheduledRun <= new Date()) {
+      toast.error("Schedule time must be in the future");
+      return null;
+    }
+
+    return scheduledRun;
+  };
+
+  const handleStart = () => {
+    const scheduledRun = getScheduledRunDate();
+    if (!scheduledRun) return;
 
     const updated: Task = {
       ...task,
       status: "running",
-      scheduledTime,
-      nextRunAt: firstNext.toISOString(),
-      updatedAt: now.toISOString(),
+      scheduledTime: formatDateTimeLocal(scheduledRun).slice(11, 16),
+      nextRunAt: scheduledRun.toISOString(),
+      updatedAt: new Date().toISOString(),
     };
     updateTask(updated);
-    toast.success(`Scheduler started — runs every ${task.cadence.every} ${task.cadence.unit} at ${scheduledTime}`);
-
-    // Run the first generation immediately
-    handleRunNow(updated);
+    toast.success(`Scheduler started — first run ${scheduledRun.toLocaleString()}`);
   };
 
   const handlePause = () => {
@@ -130,27 +184,32 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   };
 
   const handleResume = () => {
-    // Next run = now + cadence at the original scheduledTime
-    const now = new Date();
-    const next = new Date(now);
-    if (task.cadence.unit === "days") {
-      next.setDate(next.getDate() + task.cadence.every);
-    } else {
-      next.setDate(next.getDate() + task.cadence.every * 7);
-    }
-    if (task.scheduledTime) {
-      const [h, m] = task.scheduledTime.split(":").map(Number);
-      next.setHours(h, m, 0, 0);
-    }
+    const scheduledRun = getScheduledRunDate();
+    if (!scheduledRun) return;
 
     const updated: Task = {
       ...task,
       status: "running",
-      nextRunAt: next.toISOString(),
-      updatedAt: now.toISOString(),
+      scheduledTime: formatDateTimeLocal(scheduledRun).slice(11, 16),
+      nextRunAt: scheduledRun.toISOString(),
+      updatedAt: new Date().toISOString(),
     };
     updateTask(updated);
-    toast.success(`Scheduler resumed — next run ${next.toLocaleString()}`);
+    toast.success(`Scheduler resumed — next run ${scheduledRun.toLocaleString()}`);
+  };
+
+  const handleSaveNextRun = () => {
+    const scheduledRun = getScheduledRunDate();
+    if (!scheduledRun) return;
+
+    const updated: Task = {
+      ...task,
+      scheduledTime: formatDateTimeLocal(scheduledRun).slice(11, 16),
+      nextRunAt: scheduledRun.toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    updateTask(updated);
+    toast.success(`Next run updated to ${scheduledRun.toLocaleString()}`);
   };
 
   const handleRunNow = async (taskSnapshot?: Task) => {
@@ -251,6 +310,17 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               </Button>
             )}
 
+            {task.status === "running" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSaveNextRun}
+                className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+              >
+                Save Next Run
+              </Button>
+            )}
+
             {/* Run Now: always available (manual trigger) */}
             {task.status === "running" && (
               <Button
@@ -267,6 +337,29 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
           {/* Settings summary */}
           <Card className="border-zinc-800 bg-zinc-900/50 p-4">
+            <div className="mb-4 grid gap-2 border-b border-zinc-800 pb-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                  {task.scheduledTime ? "Next Scheduled Run" : "First Scheduled Run"}
+                </p>
+                <input
+                  key={scheduleInputKey}
+                  ref={scheduleInputRef}
+                  type="datetime-local"
+                  defaultValue={scheduleDefaultValue}
+                  className="mt-2 h-9 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-1 text-sm text-zinc-100 outline-none transition-[color,box-shadow] focus-visible:border-zinc-500 focus-visible:ring-2 focus-visible:ring-zinc-500/40"
+                />
+                <p className="mt-2 text-xs text-zinc-500">
+                  The selected time becomes the cadence anchor for future runs.
+                </p>
+              </div>
+              {task.status !== "running" && (
+                <p className="text-xs text-zinc-500">
+                  Start or resume to activate this schedule.
+                </p>
+              )}
+            </div>
+
             <div className="flex flex-wrap gap-6 text-sm">
               <div>
                 <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Status</p>
@@ -303,6 +396,10 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               <div>
                 <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Post Type</p>
                 <p className="mt-1 text-zinc-200">{task.defaultPostType}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Run Time</p>
+                <p className="mt-1 text-zinc-200">{task.scheduledTime ?? "Not set"}</p>
               </div>
               <div>
                 <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Last Run</p>
