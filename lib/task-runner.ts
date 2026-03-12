@@ -6,7 +6,9 @@ import {
 } from "./task-types";
 import {
   createEmptyPost,
+  ImagePrompt,
   PostPlan,
+  ReferenceImage,
 } from "./types";
 import { savePost as savePostState } from "./store";
 import { loadIdentity } from "./identity";
@@ -19,7 +21,6 @@ import {
 } from "./reference-selector";
 import { checkDailyLimit, getLLMUsageFromHeaders, recordGeneration, recordLLMCall } from "./cost-tracker";
 import { canPublish, recordPublish } from "./instagram-rate-limit";
-import { ReferenceImage } from "./types";
 import { loadAISettings } from "./ai-settings";
 import { loadAISettingsAsync } from "./ai-settings";
 import { saveGeneratedImagesToLibrary } from "./generated-image-library";
@@ -58,6 +59,91 @@ function createLog(): ExecutionLog {
       console.log(`[TaskRunner] ${msg}`);
     },
   };
+}
+
+type AIPlanPrompt = Partial<ImagePrompt>;
+type AIPlan = {
+  title?: string;
+  description?: string;
+  caption?: string;
+  hashtags?: string[];
+  imagePrompts?: AIPlanPrompt[];
+  referenceImageAnalysis?: string;
+  notes?: string;
+  postType?: PostPlan["postType"];
+  storyTextOverlay?: string;
+  storyLinkUrl?: string;
+};
+
+function normalizePrompt(prompt: AIPlanPrompt = {}): ImagePrompt {
+  return {
+    prompt: prompt.prompt || "",
+    negativePrompt: prompt.negativePrompt,
+    referenceImages: prompt.referenceImages || [],
+    referenceImageAnalysis: prompt.referenceImageAnalysis,
+  };
+}
+
+function applyAiPlan(post: PostPlan, plan: AIPlan): void {
+  post.postType = plan.postType || post.postType;
+  post.title = plan.title || "";
+  post.description = plan.description || "";
+  post.caption = plan.caption || "";
+  post.hashtags = Array.isArray(plan.hashtags) ? plan.hashtags : [];
+  post.notes = plan.notes || "";
+
+  if (Array.isArray(plan.imagePrompts)) {
+    post.imagePrompts = plan.imagePrompts.map(normalizePrompt);
+  }
+
+  if (post.postType === "story") {
+    post.storyConfig = {
+      duration: post.storyConfig?.duration || 5,
+      textOverlay: plan.storyTextOverlay || plan.caption || "",
+      linkUrl: plan.storyLinkUrl || "",
+    };
+  }
+}
+
+function applyOwnImageCarouselPlan(post: PostPlan, plan: AIPlan): void {
+  applyAiPlan(post, plan);
+
+  const companionPrompts = Array.isArray(plan.imagePrompts)
+    ? plan.imagePrompts.map(normalizePrompt)
+    : [];
+
+  if (companionPrompts.length === 2) {
+    post.imagePrompts = [
+      {
+        prompt: "",
+        referenceImages: [],
+        referenceImageAnalysis: plan.referenceImageAnalysis || "",
+      },
+      ...companionPrompts,
+    ];
+    return;
+  }
+
+  if (companionPrompts.length === 0) {
+    post.imagePrompts = [
+      {
+        prompt: "",
+        referenceImages: [],
+        referenceImageAnalysis: plan.referenceImageAnalysis || "",
+      },
+    ];
+    return;
+  }
+
+  post.imagePrompts = companionPrompts.map((prompt, index) =>
+    index === 0
+      ? {
+          ...prompt,
+          referenceImageAnalysis:
+            prompt.referenceImageAnalysis || plan.referenceImageAnalysis,
+        }
+      : prompt
+  );
 }
 
 function getFilledImageForPrompt(post: PostPlan, promptIdx: number) {
@@ -483,7 +569,7 @@ export async function runTask(
         const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(expandRes.headers) : undefined;
         recordLLMCall(providerUsed, "expand_carousel", usage?.cost ?? 0, usage);
         post = createEmptyPost("from_own_images", "carousel");
-        Object.assign(post, expandPlan);
+        applyOwnImageCarouselPlan(post, expandPlan as AIPlan);
         post.status = "approved"; // needs generation for slides 2-3
 
         // No need to inject per-prompt references here — the generation loop
@@ -536,7 +622,7 @@ export async function runTask(
         const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(analyzeRes.headers) : undefined;
         recordLLMCall(providerUsed, "analyze_images", usage?.cost ?? 0, usage);
         post = createEmptyPost("from_own_images", selectedItem.postType);
-        Object.assign(post, analyzePlan);
+        applyAiPlan(post, analyzePlan as AIPlan);
         post.status = "ready"; // skips generation — own images are final
         log.add(`Analyze complete via ${providerUsed}: "${post.title}"`);
 
@@ -586,7 +672,7 @@ export async function runTask(
       const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(brainstormRes.headers) : undefined;
       recordLLMCall(providerUsed, "brainstorm", usage?.cost ?? 0, usage);
       post = createEmptyPost("copy_post", selectedItem.postType);
-      Object.assign(post, brainstormPlan);
+      applyAiPlan(post, brainstormPlan as AIPlan);
       post.status = "draft";
       log.add(
         `Brainstorm complete (copy_post via ${providerUsed}): "${post.title}" with ${post.imagePrompts.length} prompts`
@@ -625,7 +711,7 @@ export async function runTask(
       const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(brainstormRes.headers) : undefined;
       recordLLMCall(providerUsed, "brainstorm", usage?.cost ?? 0, usage);
       post = createEmptyPost("from_scratch", selectedItem.postType);
-      Object.assign(post, brainstormPlan);
+      applyAiPlan(post, brainstormPlan as AIPlan);
       post.status = "draft";
       log.add(
         `Brainstorm complete (from_scratch via ${providerUsed}): "${post.title}" with ${post.imagePrompts.length} prompts`
