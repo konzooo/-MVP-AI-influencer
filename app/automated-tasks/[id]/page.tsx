@@ -38,11 +38,23 @@ function addCadence(date: Date, task: Task): Date {
 }
 
 function getSuggestedNextRun(task: Task): Date {
-  if (task.nextRunAt) {
-    return new Date(task.nextRunAt);
-  }
-
   const now = new Date();
+
+  if (task.nextRunAt) {
+    const nextRun = new Date(task.nextRunAt);
+    // If nextRunAt is within the next 25 hours, show it as-is
+    // Otherwise suggest today at the same time of day (for rescheduling)
+    if (nextRun.getTime() - now.getTime() <= 25 * 60 * 60 * 1000) {
+      return nextRun;
+    }
+    // nextRunAt is far in the future — suggest today at that same clock time
+    const today = new Date(now);
+    today.setHours(nextRun.getHours(), nextRun.getMinutes(), 0, 0);
+    if (today <= now) {
+      today.setDate(today.getDate() + 1);
+    }
+    return today;
+  }
 
   if (task.scheduledTime) {
     const next = new Date(now);
@@ -87,9 +99,8 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   const taskPosts = posts.filter((p) => p.taskId === task.id);
-  // In edit mode, default to now so the user picks a time today (not tomorrow from nextRunAt)
-  const scheduleDefaultValue = formatDateTimeLocal(isEditing ? new Date() : getSuggestedNextRun(task));
-  const scheduleInputKey = `${task.status}-${task.nextRunAt ?? "none"}-${task.scheduledTime ?? "none"}-${isEditing}`;
+  const scheduleDefaultValue = formatDateTimeLocal(getSuggestedNextRun(task));
+  const scheduleInputKey = `${task.status}-${task.nextRunAt ?? "none"}-${task.scheduledTime ?? "none"}`;
 
   // ─── Task CRUD ──────────────────────────────────────────────────────────────
 
