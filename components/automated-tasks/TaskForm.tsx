@@ -28,9 +28,12 @@ const POST_TYPE_OPTIONS: { value: PostType; label: string }[] = [
 ];
 
 const IMAGE_SIZE_OPTIONS = [
-  { value: "portrait_4_3", label: "Portrait 4:3 (default)" },
-  { value: "square_hd", label: "Square HD" },
-  { value: "landscape_3_4", label: "Landscape 3:4" },
+  { value: "portrait_4_3", label: "Portrait 4:3 (768×1024, default)" },
+  { value: "portrait_16_9", label: "Portrait 16:9 (576×1024)" },
+  { value: "square_hd", label: "Square HD (1080×1080)" },
+  { value: "square", label: "Square (512×512)" },
+  { value: "landscape_4_3", label: "Landscape 4:3 (1024×768)" },
+  { value: "landscape_16_9", label: "Landscape 16:9 (1024×576)" },
 ];
 
 export function TaskForm({ open, onOpenChange, initialTask, onSave }: TaskFormProps) {
