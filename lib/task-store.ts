@@ -70,6 +70,12 @@ export async function loadTasksAsync(): Promise<Task[]> {
 export async function getDueTasksAsync(): Promise<Task[]> {
   const tasks = await loadTasksAsync();
   const now = new Date();
+
+  // Debug: log all tasks so we can see why filtering fails
+  for (const t of tasks) {
+    console.log(`[getDueTasks] Task "${t.name}" status=${t.status} nextRunAt=${t.nextRunAt} now=${now.toISOString()} isDue=${t.nextRunAt ? new Date(t.nextRunAt) <= now : false}`);
+  }
+
   return tasks.filter(
     (t) => t.status === "running" && t.nextRunAt && new Date(t.nextRunAt) <= now
   );
