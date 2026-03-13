@@ -259,7 +259,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 className="mt-2 h-9 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-1 text-sm text-zinc-100 outline-none transition-[color,box-shadow] focus-visible:border-zinc-500 focus-visible:ring-2 focus-visible:ring-zinc-500/40"
               />
               <p className="mt-2 text-xs text-zinc-500">
-                Save the task to lock in the new schedule time.
+                Time is in your local timezone ({Intl.DateTimeFormat().resolvedOptions().timeZone}). Save to lock in the new schedule.
               </p>
             </div>
           </Card>

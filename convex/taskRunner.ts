@@ -30,9 +30,7 @@ async function callCronEndpoint(path: string, label: string): Promise<void> {
     }
 
     const result = await res.json();
-    if (result.ran > 0) {
-      console.log(`[${label}] Ran ${result.ran}:`, result.results);
-    }
+    console.log(`[${label}] Result (ran ${result.ran}):`, JSON.stringify(result.results ?? []));
   } catch (error) {
     console.error(`[${label}] Failed to call ${path}:`, error);
   }
