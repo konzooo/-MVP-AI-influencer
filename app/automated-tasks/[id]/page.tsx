@@ -87,8 +87,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   const taskPosts = posts.filter((p) => p.taskId === task.id);
-  const scheduleDefaultValue = formatDateTimeLocal(getSuggestedNextRun(task));
-  const scheduleInputKey = `${task.status}-${task.nextRunAt ?? "none"}-${task.scheduledTime ?? "none"}`;
+  // In edit mode, default to now so the user picks a time today (not tomorrow from nextRunAt)
+  const scheduleDefaultValue = formatDateTimeLocal(isEditing ? new Date() : getSuggestedNextRun(task));
+  const scheduleInputKey = `${task.status}-${task.nextRunAt ?? "none"}-${task.scheduledTime ?? "none"}-${isEditing}`;
 
   // ─── Task CRUD ──────────────────────────────────────────────────────────────
 
