@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { loadPostsAsync, savePostAsync } from "@/lib/store";
+import { loadPostsAsync, savePostAsync } from "@/lib/store-server";
 import { PostPlan } from "@/lib/types";
 
 function getInternalApiBaseUrl(): string {

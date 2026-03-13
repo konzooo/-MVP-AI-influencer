@@ -10,7 +10,8 @@ import {
   PostPlan,
   ReferenceImage,
 } from "./types";
-import { savePost, savePostAsync } from "./store";
+import { savePost } from "./store";
+import { savePostAsync } from "./store-server";
 
 /** Save post to Convex (awaited on server, fire-and-forget on client) */
 async function savePostState(post: PostPlan): Promise<void> {
