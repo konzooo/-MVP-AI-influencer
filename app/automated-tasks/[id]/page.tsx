@@ -95,7 +95,17 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const handleUpdateTask = (
     fields: Omit<Task, "id" | "createdAt" | "updatedAt" | "lastRunAt" | "nextRunAt" | "inspirationItems">
   ) => {
-    const updated: Task = { ...task, ...fields, updatedAt: new Date().toISOString() };
+    const scheduledRun = getScheduledRunDate();
+    if (!scheduledRun) return;
+
+    const updated: Task = {
+      ...task,
+      ...fields,
+      scheduledTime: formatDateTimeLocal(scheduledRun).slice(11, 16),
+      nextRunAt:
+        task.status === "running" ? scheduledRun.toISOString() : task.nextRunAt,
+      updatedAt: new Date().toISOString(),
+    };
     updateTask(updated);
     setIsEditing(false);
     toast.success("Task updated");
@@ -198,20 +208,6 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     toast.success(`Scheduler resumed — next run ${scheduledRun.toLocaleString()}`);
   };
 
-  const handleSaveNextRun = () => {
-    const scheduledRun = getScheduledRunDate();
-    if (!scheduledRun) return;
-
-    const updated: Task = {
-      ...task,
-      scheduledTime: formatDateTimeLocal(scheduledRun).slice(11, 16),
-      nextRunAt: scheduledRun.toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    updateTask(updated);
-    toast.success(`Next run updated to ${scheduledRun.toLocaleString()}`);
-  };
-
   const handleRunNow = async (taskSnapshot?: Task) => {
     const t = taskSnapshot ?? task;
     setRunStatus("running");
@@ -250,6 +246,23 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
             <h2 className="text-xl font-semibold text-zinc-100">Edit Task</h2>
             <p className="mt-1 text-sm text-zinc-500">Update task settings.</p>
           </div>
+          <Card className="mb-4 border-zinc-800 bg-zinc-900/50 p-4">
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                {task.scheduledTime ? "Next Scheduled Run" : "First Scheduled Run"}
+              </p>
+              <input
+                key={scheduleInputKey}
+                ref={scheduleInputRef}
+                type="datetime-local"
+                defaultValue={scheduleDefaultValue}
+                className="mt-2 h-9 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-1 text-sm text-zinc-100 outline-none transition-[color,box-shadow] focus-visible:border-zinc-500 focus-visible:ring-2 focus-visible:ring-zinc-500/40"
+              />
+              <p className="mt-2 text-xs text-zinc-500">
+                Save the task to lock in the new schedule time.
+              </p>
+            </div>
+          </Card>
           <TaskFormInline
             initialTask={task}
             onSave={handleUpdateTask}
@@ -310,17 +323,6 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               </Button>
             )}
 
-            {task.status === "running" && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleSaveNextRun}
-                className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
-              >
-                Save Next Run
-              </Button>
-            )}
-
             {/* Run Now: always available (manual trigger) */}
             {task.status === "running" && (
               <Button
@@ -337,27 +339,16 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
           {/* Settings summary */}
           <Card className="border-zinc-800 bg-zinc-900/50 p-4">
-            <div className="mb-4 grid gap-2 border-b border-zinc-800 pb-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-                  {task.scheduledTime ? "Next Scheduled Run" : "First Scheduled Run"}
-                </p>
-                <input
-                  key={scheduleInputKey}
-                  ref={scheduleInputRef}
-                  type="datetime-local"
-                  defaultValue={scheduleDefaultValue}
-                  className="mt-2 h-9 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-1 text-sm text-zinc-100 outline-none transition-[color,box-shadow] focus-visible:border-zinc-500 focus-visible:ring-2 focus-visible:ring-zinc-500/40"
-                />
-                <p className="mt-2 text-xs text-zinc-500">
-                  The selected time becomes the cadence anchor for future runs.
-                </p>
-              </div>
-              {task.status !== "running" && (
-                <p className="text-xs text-zinc-500">
-                  Start or resume to activate this schedule.
-                </p>
-              )}
+            <div className="mb-4 border-b border-zinc-800 pb-4">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                {task.scheduledTime ? "Next Scheduled Run" : "First Scheduled Run"}
+              </p>
+              <p className="mt-2 text-lg text-zinc-100">
+                {new Date(scheduleDefaultValue).toLocaleString()}
+              </p>
+              <p className="mt-2 text-xs text-zinc-500">
+                Use Edit to change the locked schedule time.
+              </p>
             </div>
 
             <div className="flex flex-wrap gap-6 text-sm">
