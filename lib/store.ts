@@ -102,6 +102,7 @@ export function updatePostsCache(posts: PostPlan[]): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem("ai-influencer-posts-cache", JSON.stringify(posts));
+    dispatchPostsUpdated();
   } catch {
     // Ignore quota errors for cache
   }
@@ -114,6 +115,11 @@ export function updatePostsCache(posts: PostPlan[]): void {
 export function savePost(post: PostPlan): void {
   const updated = { ...post, updatedAt: new Date().toISOString() };
   const stripped = stripLargeData(updated);
+
+  if (typeof window !== "undefined") {
+    const existing = loadPosts().filter((p) => p.id !== stripped.id);
+    updatePostsCache([stripped, ...existing]);
+  }
 
   // Fire-and-forget Convex mutation
   try {
@@ -135,6 +141,10 @@ export function savePost(post: PostPlan): void {
  * Delete a post from Convex.
  */
 export function deletePost(id: string): void {
+  if (typeof window !== "undefined") {
+    updatePostsCache(loadPosts().filter((post) => post.id !== id));
+  }
+
   try {
     const client = getConvexClient();
     client.mutation(api.posts.remove, { postId: id });

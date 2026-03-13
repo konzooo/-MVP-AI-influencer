@@ -45,6 +45,7 @@ import {
 import { ImageDropZone } from "@/components/ui/ImageDropZone";
 import { ReferenceLibraryDialog } from "@/components/reference-library/ReferenceLibraryDialog";
 import { loadGeneratedImageLibrary } from "@/lib/generated-image-library";
+import { POSTS_UPDATED_EVENT } from "@/lib/post-events";
 import {
   ChevronDown,
   ChevronRight,
@@ -851,6 +852,20 @@ export function PostViewModal({
     const fresh = loadPosts().find((p) => p.id === postId);
     if (fresh) setPost(fresh);
   }, [postId]);
+
+  useEffect(() => {
+    if (!open || !postId) return;
+
+    const handlePostsUpdated = () => {
+      const fresh = loadPosts().find((p) => p.id === postId);
+      if (fresh) setPost(fresh);
+    };
+
+    window.addEventListener(POSTS_UPDATED_EVENT, handlePostsUpdated);
+    return () => {
+      window.removeEventListener(POSTS_UPDATED_EVENT, handlePostsUpdated);
+    };
+  }, [open, postId]);
 
   const applyCaptionToPost = useCallback((newCaption: string) => {
     if (!post) return;
