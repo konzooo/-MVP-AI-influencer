@@ -44,7 +44,8 @@ export function TaskCard({ task }: TaskCardProps) {
           </p>
           {task.nextRunAt && (
             <p className="mt-1 text-xs text-zinc-500">
-              Next run: {new Date(task.nextRunAt).toLocaleString()}
+              Next run: {new Date(task.nextRunAt).toLocaleString()}{" "}
+              <span className="text-zinc-600">({Intl.DateTimeFormat().resolvedOptions().timeZone})</span>
             </p>
           )}
         </div>

@@ -10,7 +10,16 @@ import {
   PostPlan,
   ReferenceImage,
 } from "./types";
-import { savePost as savePostState } from "./store";
+import { savePost, savePostAsync } from "./store";
+
+/** Save post to Convex (awaited on server, fire-and-forget on client) */
+async function savePostState(post: PostPlan): Promise<void> {
+  if (isServer) {
+    await savePostAsync(post);
+  } else {
+    savePost(post);
+  }
+}
 import { loadIdentity } from "./identity";
 import { loadIdentityAsync } from "./identity";
 import { saveTask, saveTaskAsync, computeNextRunAt } from "./task-store";
@@ -461,14 +470,14 @@ export async function generatePostImages(
 
     if (filledPromptCount < post.imagePrompts.length) {
       post.status = "draft";
-      savePostState(post);
+      await savePostState(post);
       result.error = `Some slides are still missing images (${filledPromptCount}/${post.imagePrompts.length} filled)`;
       log.add(`ERROR: ${result.error}`);
       return result;
     }
 
     post.status = "ready";
-    savePostState(post);
+    await savePostState(post);
     log.add(
       generatedCount > 0
         ? `Status: ready (${generatedCount} images generated)`
@@ -771,7 +780,7 @@ export async function runTask(
 
     if (task.approvalMode === "manual") {
       log.add(`Manual approval mode: saving post at ${post.status}, stopping`);
-      savePostState(post);
+      await savePostState(post);
       await markItemUsed(task, selectedItem.id);
 
       // Always advance nextRunAt so the scheduler doesn't re-fire every 60s
@@ -796,7 +805,7 @@ export async function runTask(
     // If no generation needed (own_image single/story), skip to publish
     if (selectedItem.type === "own_image" && selectedItem.postType !== "carousel") {
       post.status = "ready";
-      savePostState(post);
+      await savePostState(post);
       log.add(`Status: ready (own image, no generation needed)`);
     } else {
       // Determine style mode hint for character reference selection
@@ -877,7 +886,7 @@ export async function runTask(
 
     // ─── Step 8: Finalize ─────────────────────────────────────────────────────
 
-    savePostState(post);
+    await savePostState(post);
     await markItemUsed(task, selectedItem.id);
 
     // Update task timestamps

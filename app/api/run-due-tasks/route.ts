@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getDueTasksAsync, saveTaskAsync, computeNextRunAt } from "@/lib/task-store";
 
+export const maxDuration = 60; // Vercel Hobby max
+
 /**
  * POST /api/run-due-tasks
  *
