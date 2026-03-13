@@ -113,9 +113,17 @@ function stripMarkdownFences(text: string): string {
   return cleaned.trim();
 }
 
-function getBrainstormSystemPrompt(mode: CreationMode, carouselStyle: CarouselStyle = "quick_snaps"): string {
+function getBrainstormSystemPrompt(
+  mode: CreationMode,
+  carouselStyle: CarouselStyle = "quick_snaps",
+  imageCount = 0
+): string {
   const raw = mode === "copy_post" ? COPY_POST_PROMPT : FROM_SCRATCH_PROMPT;
-  return resolveCarouselStyle(raw, carouselStyle);
+  return resolveCarouselStyle(raw, {
+    style: carouselStyle,
+    creationMode: mode,
+    imageCount,
+  });
 }
 
 function calculateClaudeCostUsd(usage: ClaudeApiUsage | undefined): number {
@@ -270,7 +278,11 @@ function buildBrainstormUserMessage(request: ClaudeBrainstormRequest): string {
 }
 
 export async function brainstormWithClaude(request: ClaudeBrainstormRequest): Promise<ClaudeResult<ClaudeJsonResult>> {
-  let systemPrompt = getBrainstormSystemPrompt(request.creationMode, request.carouselStyle || "quick_snaps");
+  let systemPrompt = getBrainstormSystemPrompt(
+    request.creationMode,
+    request.carouselStyle || "quick_snaps",
+    request.images.length
+  );
   if (request.personaContext) {
     systemPrompt = `${request.personaContext}\n\n${systemPrompt}`;
   }
@@ -324,7 +336,11 @@ export async function expandOwnImageForCarouselWithClaude(
   personaContext?: string,
   carouselStyle?: CarouselStyle
 ): Promise<ClaudeResult<ClaudeJsonResult>> {
-  let systemPrompt = resolveCarouselStyle(EXPAND_CAROUSEL_PROMPT, carouselStyle || "quick_snaps");
+  let systemPrompt = resolveCarouselStyle(EXPAND_CAROUSEL_PROMPT, {
+    style: carouselStyle || "quick_snaps",
+    creationMode: "from_own_images",
+    imageCount: 1,
+  });
   if (personaContext) {
     systemPrompt = `${personaContext}\n\n${systemPrompt}`;
   }

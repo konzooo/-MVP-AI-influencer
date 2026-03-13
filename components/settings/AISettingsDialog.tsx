@@ -54,9 +54,9 @@ const CAROUSEL_STYLE_INFO: Record<CarouselStyle, { label: string; description: s
     description: "3 shots moments apart — same scene, different poses",
     icon: Camera,
   },
-  curated_series: {
-    label: "Curated Series",
-    description: "Distinct, carefully composed shots from the same shoot",
+  angle_progression: {
+    label: "Angle Progression",
+    description: "Mini-shoot sequence — full for planned carousels, lighter for constrained ones",
     icon: Layers,
   },
 };
@@ -152,6 +152,11 @@ export function AISettingsDialog({ open, onOpenChange }: AISettingsDialogProps) 
 
           <div>
             <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Carousel Style</p>
+            <div className="px-3 pb-2">
+              <p className="text-[10px] text-zinc-500">
+                Angle Progression runs in full planning for from-scratch carousels and a lighter companion-slide mode when slide 1 or source images constrain the sequence.
+              </p>
+            </div>
             <div className="space-y-1 border-t border-zinc-800">
               {CAROUSEL_STYLES.map((style) => {
                 const info = CAROUSEL_STYLE_INFO[style];

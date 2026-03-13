@@ -12,9 +12,17 @@ const { fromScratchPrompt: FROM_SCRATCH_PROMPT, copyPostPrompt: COPY_POST_PROMPT
 
 // ─── Prompt selector ─────────────────────────────────────────────────────────
 
-function getSystemPrompt(mode: CreationMode, carouselStyle: CarouselStyle = "quick_snaps"): string {
+function getSystemPrompt(
+  mode: CreationMode,
+  carouselStyle: CarouselStyle = "quick_snaps",
+  imageCount = 0
+): string {
   const raw = mode === "copy_post" ? COPY_POST_PROMPT : FROM_SCRATCH_PROMPT;
-  return resolveCarouselStyle(raw, carouselStyle);
+  return resolveCarouselStyle(raw, {
+    style: carouselStyle,
+    creationMode: mode,
+    imageCount,
+  });
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -148,7 +156,7 @@ export async function brainstormWithGemini(
     throw new Error("Please provide an idea or upload an image");
   }
 
-  let systemPrompt = getSystemPrompt(req.creationMode, carouselStyle);
+  let systemPrompt = getSystemPrompt(req.creationMode, carouselStyle, req.images.length);
   if (personaContext) {
     systemPrompt = `${personaContext}\n\n${systemPrompt}`;
   }
@@ -247,7 +255,11 @@ export async function expandOwnImageForCarousel(
     "KB"
   );
 
-  let systemPrompt = resolveCarouselStyle(EXPAND_OWN_IMAGE_CAROUSEL_PROMPT, carouselStyle || "quick_snaps");
+  let systemPrompt = resolveCarouselStyle(EXPAND_OWN_IMAGE_CAROUSEL_PROMPT, {
+    style: carouselStyle || "quick_snaps",
+    creationMode: "from_own_images",
+    imageCount: 1,
+  });
   if (personaContext) {
     systemPrompt = `${personaContext}\n\n${systemPrompt}`;
   }

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { brainstormWithGemini, BrainstormRequest } from "@/lib/gemini";
 import { brainstormWithClaude, buildClaudeResponseHeaders } from "@/lib/claude";
-import { isAIProvider } from "@/lib/ai-settings";
+import { isAIProvider, normalizeCarouselStyle } from "@/lib/ai-settings";
 
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as BrainstormRequest & { personaContext?: string; aiProvider?: string; carouselStyle?: string };
     const { idea, images, creationMode, postType, personaContext, aiProvider, carouselStyle } = body;
     const provider = isAIProvider(aiProvider) ? aiProvider : "gemini";
+    const normalizedCarouselStyle = normalizeCarouselStyle(carouselStyle) || undefined;
 
     if (!idea && (!images || images.length === 0)) {
       return NextResponse.json(
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
         creationMode: creationMode || "from_scratch",
         postType: postType || "single_image",
         personaContext,
-        carouselStyle: (carouselStyle as "quick_snaps" | "curated_series") || undefined,
+        carouselStyle: normalizedCarouselStyle,
       });
       return NextResponse.json(result.data, { headers: buildClaudeResponseHeaders(result.usage) });
     }
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
       },
       geminApiKey,
       personaContext,
-      (carouselStyle as "quick_snaps" | "curated_series") || undefined
+      normalizedCarouselStyle
     );
     return NextResponse.json(plan, {
       headers: {

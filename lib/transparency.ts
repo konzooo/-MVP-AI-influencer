@@ -5,6 +5,9 @@
  * to ensure complete transparency about how the AI Influencer system works.
  */
 
+import type { CarouselStyle } from "./ai-settings";
+import type { CreationMode } from "./types";
+
 export interface TransparencyData {
   lastUpdated: string; // ISO date string, updated whenever prompts change
   geminiPrompts: {
@@ -54,7 +57,7 @@ export interface TransparencyData {
 }
 
 export const DEFAULT_TRANSPARENCY: TransparencyData = {
-  lastUpdated: "2026-03-11",
+  lastUpdated: "2026-03-13",
   geminiPrompts: {
     sharedPreamble: `You are an expert Instagram content strategist and creative director for an AI influencer account.
 
@@ -158,20 +161,7 @@ Return your response as valid JSON matching this exact structure:
 For single images (single post or story), create one imagePrompt.
 For stories, note the vertical 9:16 format.
 
-For carousels, ALWAYS generate exactly 3 imagePrompts — regardless of how many source images were provided:
-
-**If 1 source image was provided:**
-- Slide 1: full and rich recreation of the source image — nails the setting, lighting, mood, pose, and outfit in detail
-- Slides 2-3: SHORT variation prompts — different pose, angle, or expression in the same scene
-  - During generation, slide 1's generated image will be Figure 1 for slides 2-3. It already contains the full scene, outfit, and mood.
-  - Keep it to 1-2 sentences: describe only the variation. Do NOT re-describe the environment or outfit.
-  - Always end with: "Same scene, lighting, outfit, and mood as Figure 1."
-  - Example: "The character from Figure 1 with a relaxed smile, leaning slightly to one side. Same scene, lighting, outfit, and mood as Figure 1."
-
-**If multiple source images were provided (up to 3):**
-- One imagePrompt per source image, each as a full recreation of that specific image
-- Slide 1 prompt: full and rich
-- Slides 2-3: full recreation of their respective source image (not short variations — each has its own source to copy)
+{{COPY_POST_CAROUSEL_INSTRUCTION}}
 
 IMPORTANT: The referenceImageAnalysis is shown to the user for transparency — include identity features there so they can verify what the AI detected. Keep them completely OUT of the generation prompt.
 
@@ -354,12 +344,19 @@ Guidelines:
 };
 
 // ─── Carousel Style Instructions ─────────────────────────────────────────────
-// These replace the {{CAROUSEL_STYLE_INSTRUCTION}} placeholder in prompts.
+// Angle Progression intentionally resolves to full, lite, or source-driven
+// bypass depending on how constrained the carousel source is. Do not inject
+// one static instruction block everywhere.
 
-import type { CarouselStyle } from "./ai-settings";
+type CarouselPromptCreationMode = CreationMode | "from_own_images";
 
-const CAROUSEL_STYLE_INSTRUCTIONS: Record<CarouselStyle, string> = {
-  quick_snaps: `Guidelines for companion prompts (slides 2-3):
+export interface CarouselPromptContext {
+  style: CarouselStyle;
+  creationMode: CarouselPromptCreationMode;
+  imageCount?: number;
+}
+
+const QUICK_SNAPS_INSTRUCTIONS = `Guidelines for companion prompts (slides 2-3):
 - During generation, slide 1's generated image will be provided as Figure 1 for slides 2-3. It already contains the full scene, outfit, lighting, and mood.
 - Keep each prompt to 1-2 sentences: describe ONLY the pose/expression/angle change. Do NOT re-describe the environment, outfit, or lighting.
 - Always end with: "Same scene, lighting, outfit, and mood as Figure 1."
@@ -367,23 +364,114 @@ const CAROUSEL_STYLE_INSTRUCTIONS: Record<CarouselStyle, string> = {
 - Reference the character as "the character from Figure 1"
 - Do NOT describe facial features, hair color, or identity traits — the character reference handles that
 - Example: "The character from Figure 1 looking over her shoulder with a playful smile. Same scene, lighting, outfit, and mood as Figure 1."
-- Example: "The character from Figure 1 leaning against the wall, eyes closed, serene expression. Same scene, lighting, outfit, and mood as Figure 1."`,
+- Example: "The character from Figure 1 leaning against the wall, eyes closed, serene expression. Same scene, lighting, outfit, and mood as Figure 1."`;
 
-  curated_series: `Guidelines for companion prompts (slides 2-3):
-- Each prompt should vary in pose, angle, or framing — but maintain the same overall mood, style, lighting, and setting
-- Think like a photographer doing a curated mini-shoot: each slide is a distinct, carefully composed shot
-- Reference the character as "the character from Figure 1"
-- Do NOT describe facial features, hair color, or identity traits — the character reference handles that
-- Describe: scene, pose, composition, lighting, mood, clothing, technical qualities
-- Keep the same clothing/outfit across all slides unless the vibe suggests otherwise
-- Each prompt should be detailed enough to stand on its own while maintaining visual cohesion with slide 1`,
+const ANGLE_PROGRESSION_FULL_INSTRUCTIONS = `Create a 3 image carousel with the purpose of creating a visually engaging Instagram post that encourages viewers to swipe through the images and feel like they are seeing a short, cohesive mini photoshoot of a sexy lifestyle influencer.
+
+Slide structure:
+- Slide 1: wider framing (full body or strong silhouette) — strong hook image
+- Slide 2: mid framing (waist-up or seated composition) — most attractive image
+- Slide 3: close framing (face, shoulders, or upper-body detail) — intimate close-up
+
+Instructions:
+- Vary pose, camera angle, or framing between slides
+- Maintain the same scene, lighting, mood, and environment so the images feel like they were taken during the same moment
+- Maintain the same outfit and styling across slides
+- Avoid repeating the exact same composition
+- Refer to the subject as "the character from Figure 1"
+- Do NOT describe facial features, hair color, or identity traits
+- Keep image prompts for slides 2 and 3 relatively simple since much will be determined by slide 1 during generation`;
+
+const ANGLE_PROGRESSION_LITE_INSTRUCTIONS = `Create a 3 image carousel with the purpose of creating a visually engaging Instagram post that encourages viewers to swipe through the images and feel like they are seeing a short, cohesive mini photoshoot of a sexy lifestyle influencer.
+
+Slide structure:
+- Treat slide 1 as given and constrained
+- Plan different angles for the remaining slides
+- Optimize for engagement and natural swipe-through behavior by showing different angles and attractive features
+
+Instructions:
+- Vary pose, camera angle, or framing between slides
+- Maintain the same scene, lighting, mood, and environment so the images feel like they were taken during the same moment
+- Maintain the same outfit and styling across slides
+- Avoid repeating the exact same composition
+- Refer to the subject as "the character from Figure 1"
+- Do NOT describe facial features, hair color, or identity traits
+- Keep image prompts for slides 2 and 3 rather simple since much will be determined by the reference image`;
+
+const COPY_POST_MULTI_IMAGE_CAROUSEL_INSTRUCTIONS = `For carousels, ALWAYS generate exactly 3 imagePrompts — regardless of how many source images were provided:
+
+**If multiple source images were provided (up to 3):**
+- One imagePrompt per source image, each as a full recreation of that specific image
+- Slide 1 prompt: full and rich
+- Slides 2-3: full recreation of their respective source image (not short variations — each has its own source to copy)
+
+If only 1 source image was provided instead, fall back to the single-image carousel instructions for the selected style.`;
+
+const COPY_POST_CAROUSEL_INSTRUCTIONS: Record<CarouselStyle, string> = {
+  quick_snaps: `For carousels, ALWAYS generate exactly 3 imagePrompts — regardless of how many source images were provided:
+
+**If 1 source image was provided:**
+- Slide 1: full and rich recreation of the source image — nails the setting, lighting, mood, pose, and outfit in detail
+- Slides 2-3: SHORT variation prompts — different pose, angle, or expression in the same scene
+  - During generation, slide 1's generated image will be Figure 1 for slides 2-3. It already contains the full scene, outfit, and mood.
+  - Keep it to 1-2 sentences: describe only the variation. Do NOT re-describe the environment or outfit.
+  - Always end with: "Same scene, lighting, outfit, and mood as Figure 1."
+  - Example: "The character from Figure 1 with a relaxed smile, leaning slightly to one side. Same scene, lighting, outfit, and mood as Figure 1."
+
+**If multiple source images were provided (up to 3):**
+- One imagePrompt per source image, each as a full recreation of that specific image
+- Slide 1 prompt: full and rich
+- Slides 2-3: full recreation of their respective source image (not short variations — each has its own source to copy)`,
+  angle_progression: `For carousels, ALWAYS generate exactly 3 imagePrompts — regardless of how many source images were provided:
+
+**If 1 source image was provided:**
+- Slide 1: full and rich recreation of the source image — nails the setting, lighting, mood, pose, and outfit in detail
+- Slides 2-3: create simple companion prompts that feel like the next angles from the same mini photoshoot
+  - Treat slide 1 as given and constrained
+  - Plan different angles or framings for slides 2-3 to create a more engaging swipe-through sequence
+  - Keep the same scene, lighting, mood, environment, outfit, and styling
+  - Avoid repeating the exact same composition
+  - During generation, slide 1's generated image will be Figure 1 for slides 2-3. It already contains the full scene, outfit, and mood.
+  - Keep each prompt to 1-2 sentences because much will be determined by Figure 1
+  - Refer to the subject as "the character from Figure 1"
+  - Do NOT describe facial features, hair color, or identity traits
+
+**If multiple source images were provided (up to 3):**
+- One imagePrompt per source image, each as a full recreation of that specific image
+- Slide 1 prompt: full and rich
+- Slides 2-3: full recreation of their respective source image (not angle progression — the uploaded sources define the sequence)`,
 };
 
+function getSharedCarouselStyleInstruction(context: CarouselPromptContext): string {
+  if (context.style === "quick_snaps") {
+    return QUICK_SNAPS_INSTRUCTIONS;
+  }
+
+  return context.creationMode === "from_scratch"
+    ? ANGLE_PROGRESSION_FULL_INSTRUCTIONS
+    : ANGLE_PROGRESSION_LITE_INSTRUCTIONS;
+}
+
+function getCopyPostCarouselInstruction(context: CarouselPromptContext): string {
+  if (context.creationMode !== "copy_post") {
+    return COPY_POST_MULTI_IMAGE_CAROUSEL_INSTRUCTIONS;
+  }
+
+  if ((context.imageCount || 0) > 1) {
+    return COPY_POST_MULTI_IMAGE_CAROUSEL_INSTRUCTIONS;
+  }
+
+  return COPY_POST_CAROUSEL_INSTRUCTIONS[context.style];
+}
+
 /**
- * Resolves {{CAROUSEL_STYLE_INSTRUCTION}} placeholders in a prompt string.
+ * Resolves carousel placeholders based on the creation flow and how constrained
+ * the source material is.
  */
-export function resolveCarouselStyle(prompt: string, style: CarouselStyle): string {
-  return prompt.replace("{{CAROUSEL_STYLE_INSTRUCTION}}", CAROUSEL_STYLE_INSTRUCTIONS[style]);
+export function resolveCarouselStyle(prompt: string, context: CarouselPromptContext): string {
+  return prompt
+    .replace("{{CAROUSEL_STYLE_INSTRUCTION}}", getSharedCarouselStyleInstruction(context))
+    .replace("{{COPY_POST_CAROUSEL_INSTRUCTION}}", getCopyPostCarouselInstruction(context));
 }
 
 /**

@@ -9,11 +9,11 @@ export const AI_PROVIDER_LABELS: Record<AIProvider, string> = {
  * Carousel style determines how companion slide prompts are generated:
  * - "quick_snaps": Short prompts focused on pose/expression changes only.
  *   Feels like 3 shots taken moments apart in the same scene.
- * - "curated_series": Detailed prompts describing full scene variations.
- *   Each slide is a distinct, carefully composed shot from the same shoot.
+ * - "angle_progression": A mini-shoot sequence that resolves to a full or lite
+ *   prompt variant depending on how constrained the source material is.
  */
-export type CarouselStyle = "quick_snaps" | "curated_series";
-export const CAROUSEL_STYLES = ["quick_snaps", "curated_series"] as const;
+export type CarouselStyle = "quick_snaps" | "angle_progression";
+export const CAROUSEL_STYLES = ["quick_snaps", "angle_progression"] as const;
 export const AI_PROVIDER_KEYS = [
   "brainstormFromScratch",
   "brainstormCopyPost",
@@ -34,7 +34,7 @@ export interface AISettings {
   carouselStyle: CarouselStyle;
 }
 
-const DEFAULT_SETTINGS: AISettings = {
+export const DEFAULT_AI_SETTINGS: AISettings = {
   brainstormFromScratch: "gemini",
   brainstormCopyPost: "gemini",
   analyzeImages: "gemini",
@@ -51,14 +51,21 @@ export function isAIProvider(value: unknown): value is AIProvider {
 }
 
 export function isCarouselStyle(value: unknown): value is CarouselStyle {
-  return value === "quick_snaps" || value === "curated_series";
+  return value === "quick_snaps" || value === "angle_progression";
 }
 
-function sanitizeAISettings(raw: unknown): AISettings {
-  if (!raw || typeof raw !== "object") return DEFAULT_SETTINGS;
+export function normalizeCarouselStyle(value: unknown): CarouselStyle | null {
+  if (value === "curated_series") {
+    return "angle_progression";
+  }
+  return isCarouselStyle(value) ? value : null;
+}
+
+export function sanitizeAISettings(raw: unknown): AISettings {
+  if (!raw || typeof raw !== "object") return DEFAULT_AI_SETTINGS;
 
   const parsed = raw as Partial<Record<keyof AISettings, unknown>>;
-  const next: AISettings = { ...DEFAULT_SETTINGS };
+  const next: AISettings = { ...DEFAULT_AI_SETTINGS };
 
   for (const key of AI_PROVIDER_KEYS) {
     if (isAIProvider(parsed[key])) {
@@ -66,22 +73,23 @@ function sanitizeAISettings(raw: unknown): AISettings {
     }
   }
 
-  if (isCarouselStyle(parsed.carouselStyle)) {
-    next.carouselStyle = parsed.carouselStyle;
+  const normalizedCarouselStyle = normalizeCarouselStyle(parsed.carouselStyle);
+  if (normalizedCarouselStyle) {
+    next.carouselStyle = normalizedCarouselStyle;
   }
 
   return next;
 }
 
 export function loadAISettings(): AISettings {
-  if (typeof window === "undefined") return DEFAULT_SETTINGS;
+  if (typeof window === "undefined") return DEFAULT_AI_SETTINGS;
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return DEFAULT_SETTINGS;
+    if (!raw) return DEFAULT_AI_SETTINGS;
     return sanitizeAISettings(JSON.parse(raw));
   } catch (error) {
     console.error("Failed to load AI settings:", error);
-    return DEFAULT_SETTINGS;
+    return DEFAULT_AI_SETTINGS;
   }
 }
 
@@ -95,10 +103,10 @@ export async function loadAISettingsAsync(): Promise<AISettings> {
     const { api } = await import("@/convex/_generated/api");
     const client = getConvexClient();
     const raw = await client.query(api.settings.get, { key: "aiSettings" });
-    if (!raw) return DEFAULT_SETTINGS;
+    if (!raw) return DEFAULT_AI_SETTINGS;
     return sanitizeAISettings(JSON.parse(raw));
   } catch {
-    return DEFAULT_SETTINGS;
+    return DEFAULT_AI_SETTINGS;
   }
 }
 

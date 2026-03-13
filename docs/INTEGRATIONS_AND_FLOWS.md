@@ -39,13 +39,15 @@ We deliberately **separate “identity features”** from prompts to avoid confl
   "idea": "string (optional if images provided)",
   "images": ["data:image/png;base64,...", "..."],
   "creationMode": "from_scratch | copy_post",
-  "postType": "single_image | carousel | reel_cover | story"
+  "postType": "single_image | carousel | reel_cover | story",
+  "carouselStyle": "quick_snaps | angle_progression (optional)"
 }
 ```
 
 Notes:
 - `images` are **base64 data URIs** (clipboard/drag-drop upload data).
 - `creationMode` selects which system prompt is used (see below).
+- `carouselStyle` is selected in Settings and passed through for carousel-capable flows.
 
 ### What we send to Gemini
 
@@ -71,7 +73,7 @@ Source: `lib/gemini.ts` builds `parts` and then calls:
 
 ### Creative Lab system prompts (exact)
 
-These live in `lib/gemini.ts`:
+These live in `lib/transparency.ts` and are consumed by `lib/gemini.ts` / `lib/claude.ts`:
 
 - `SHARED_PREAMBLE`
 - `FROM_SCRATCH_PROMPT`
@@ -84,6 +86,41 @@ Key rules embedded in the prompts:
   - reference the subject as `"the character from Figure 1"`
   - **do not** describe identity features in the generation prompt
 - Copy-post mode additionally asks for `referenceImageAnalysis`
+
+### Carousel Style Resolution
+
+Visible carousel styles:
+- `quick_snaps`
+- `angle_progression`
+
+`angle_progression` is a single user-facing style, but internally it resolves into one of two prompt variants:
+- `full`: a fully planned 3-slide sequence
+- `lite`: a looser companion-slide variant when slide 1 or source material is constrained
+
+Flow matrix:
+
+| Flow | `quick_snaps` | `angle_progression` |
+| --- | --- | --- |
+| `from_scratch` carousel | Standard quick-snap companion logic | `full` variant |
+| `from_own_images` carousel | Standard quick-snap companion logic | `lite` variant |
+| `copy_post` carousel with 1 source image | Quick-snap companion logic for slides 2-3 | `lite` variant for slides 2-3 |
+| `copy_post` carousel with 2-3 source images | Ignored; uploaded sources define the sequence | Ignored; uploaded sources define the sequence |
+
+`angle_progression full` means:
+- Slide 1: wider framing / hook
+- Slide 2: mid framing / strongest attraction image
+- Slide 3: closer framing / intimate close-up
+- Same scene, lighting, mood, environment, outfit, and styling
+
+`angle_progression lite` means:
+- Treat slide 1 as given / constrained
+- Plan the remaining slides as different angles of the same concept
+- Optimize for engagement and natural swipe-through behavior
+- Keep prompts simple because slide 1 / Figure 1 already defines much of the look
+
+Why style is ignored for multi-image `copy_post`:
+- Each uploaded source image explicitly defines its target slide
+- In that case the system should prioritize copying the supplied sequence, not re-planning the framing
 
 ### Expected Gemini JSON output (server → client)
 
@@ -285,4 +322,3 @@ Configured in `.env.local`:
 
 - **“My reference images disappeared”**
   - expected after refresh; base64 references are stripped from `localStorage` to avoid quota issues
-

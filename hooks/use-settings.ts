@@ -4,18 +4,8 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useCallback, useEffect, useMemo } from "react";
 import { DEFAULT_IDENTITY, type InfluencerIdentity } from "@/lib/identity";
-import { type AISettings } from "@/lib/ai-settings";
+import { DEFAULT_AI_SETTINGS, sanitizeAISettings, type AISettings } from "@/lib/ai-settings";
 import { type CostSettings } from "@/lib/cost-tracker";
-
-const DEFAULT_AI_SETTINGS: AISettings = {
-  brainstormFromScratch: "gemini",
-  brainstormCopyPost: "gemini",
-  analyzeImages: "gemini",
-  expandCarousel: "gemini",
-  promptHelper: "gemini",
-  captionHelper: "gemini",
-  carouselStyle: "quick_snaps",
-};
 
 const DEFAULT_COST_SETTINGS: CostSettings = {
   dailyWarningLimit: 1.0,
@@ -80,7 +70,7 @@ export function useAISettings() {
   const set = useMutation(api.settings.set);
 
   const settings: AISettings = useMemo(
-    () => (raw != null ? { ...DEFAULT_AI_SETTINGS, ...JSON.parse(raw) } : DEFAULT_AI_SETTINGS),
+    () => (raw != null ? sanitizeAISettings(JSON.parse(raw)) : DEFAULT_AI_SETTINGS),
     [raw]
   );
 

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { expandOwnImageForCarousel } from "@/lib/gemini";
 import { buildClaudeResponseHeaders, expandOwnImageForCarouselWithClaude } from "@/lib/claude";
-import { isAIProvider } from "@/lib/ai-settings";
+import { isAIProvider, normalizeCarouselStyle } from "@/lib/ai-settings";
 
 export async function POST(request: NextRequest) {
   try {
     const { image, notes, personaContext, carouselStyle, aiProvider } = await request.json();
     const provider = isAIProvider(aiProvider) ? aiProvider : "gemini";
+    const normalizedCarouselStyle = normalizeCarouselStyle(carouselStyle) || undefined;
 
     if (!image) {
       return NextResponse.json(
@@ -16,7 +17,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (provider === "claude") {
-      const result = await expandOwnImageForCarouselWithClaude(image, notes || "", personaContext, carouselStyle);
+      const result = await expandOwnImageForCarouselWithClaude(image, notes || "", personaContext, normalizedCarouselStyle);
       return NextResponse.json(result.data, { headers: buildClaudeResponseHeaders(result.usage) });
     }
 
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await expandOwnImageForCarousel(image, notes || "", apiKey, personaContext, carouselStyle);
+    const result = await expandOwnImageForCarousel(image, notes || "", apiKey, personaContext, normalizedCarouselStyle);
     return NextResponse.json(result, {
       headers: {
         "x-ai-provider": "gemini",

@@ -332,7 +332,7 @@ export default function TransparencyPage() {
             {expandedSections["expand"] && (
               <div className="border-t border-zinc-800 p-4 space-y-3">
                 <p className="text-xs text-zinc-400">
-                  Used when expanding a single user image into a 4-slide carousel by generating 3 companion prompts.
+                  Used when expanding a single user image into a 3-slide carousel by generating 2 companion prompts.
                 </p>
                 {isEditMode ? (
                   <Textarea
