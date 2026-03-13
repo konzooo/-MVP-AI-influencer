@@ -159,8 +159,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       return null;
     }
 
-    if (scheduledRun <= new Date()) {
-      toast.error("Schedule time must be in the future");
+    // Allow times up to 5 minutes in the past (cron will pick it up immediately)
+    if (scheduledRun < new Date(Date.now() - 5 * 60 * 1000)) {
+      toast.error("Schedule time is too far in the past");
       return null;
     }
 
