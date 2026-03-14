@@ -43,10 +43,15 @@ export function AccountStatus({
   if (!account.connected) {
     return (
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="h-2 w-2 rounded-full bg-zinc-600" />
-            <span className="text-xs text-zinc-500">Not connected</span>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-zinc-600" />
+              <span className="text-xs text-zinc-500">Not connected</span>
+            </div>
+            {account.error && (
+              <p className="mt-1 text-[10px] text-amber-400">{account.error}</p>
+            )}
           </div>
           <Button
             size="sm"
@@ -54,7 +59,7 @@ export function AccountStatus({
             className="h-7 gap-1.5 bg-violet-600 px-3 text-xs text-white hover:bg-violet-700"
           >
             <Instagram className="h-3.5 w-3.5" />
-            Connect Instagram
+            {account.error ? "Reconnect" : "Connect Instagram"}
           </Button>
         </div>
       </div>

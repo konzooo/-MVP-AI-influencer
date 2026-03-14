@@ -19,6 +19,7 @@ export interface InstagramAccount {
   igUserId?: string;
   tokenExpiresAt?: string;
   tokenDaysRemaining?: number;
+  error?: string;
 }
 
 interface ContainerStatus {
@@ -41,6 +42,15 @@ const GRAPH_API_BASE = `https://graph.instagram.com/${GRAPH_API_VERSION}`;
 const CONTAINER_POLL_INTERVAL_MS = 2000;
 const CONTAINER_POLL_MAX_ATTEMPTS = 30;
 const MAX_IMAGE_SIZE_BYTES = 7.5 * 1024 * 1024; // 7.5MB (under IG's 8MB limit)
+const INSTAGRAM_AUTH_ERROR_PATTERNS = [
+  "error validating access token",
+  "invalid oauth access token",
+  "session has been invalidated",
+  "access token has expired",
+  "cannot parse access token",
+  "access token could not be decrypted",
+  "permissions error",
+];
 
 // ─── Token Storage ──────────────────────────────────────────────────────────
 
@@ -97,6 +107,39 @@ export function getTokenDaysRemaining(auth: InstagramAuth): number {
   const expiry = new Date(auth.tokenExpiresAt);
   const diffMs = expiry.getTime() - now.getTime();
   return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+}
+
+function isInstagramAuthError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return INSTAGRAM_AUTH_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+function getReconnectRequiredMessage(message: string): string {
+  if (message.toLowerCase().includes("session has been invalidated")) {
+    return "Instagram session expired after a password or security change. Reconnect your account.";
+  }
+
+  return "Instagram connection expired or lost permissions. Reconnect your account.";
+}
+
+async function invalidateAuth(message: string): Promise<string> {
+  await deleteAuth();
+  return getReconnectRequiredMessage(message);
+}
+
+async function getPublishFailure(error: unknown): Promise<PublishResult> {
+  const message = error instanceof Error ? error.message : "Unknown error";
+
+  if (isInstagramAuthError(message)) {
+    return {
+      success: false,
+      error: await invalidateAuth(message),
+      retryable: false,
+    };
+  }
+
+  const retryable = !message.includes("token") && !message.includes("permission");
+  return { success: false, error: message, retryable };
 }
 
 // ─── OAuth Helpers ──────────────────────────────────────────────────────────
@@ -244,9 +287,52 @@ export async function getAccountStatus(): Promise<InstagramAccount> {
         tokenDaysRemaining: getTokenDaysRemaining(updatedAuth),
       };
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      if (isInstagramAuthError(message)) {
+        return {
+          connected: false,
+          error: await invalidateAuth(message),
+        };
+      }
+
       console.error("Auto-refresh failed:", error);
       // Continue with existing token if refresh fails
     }
+  }
+
+  try {
+    const accountInfo = await fetchAccountInfo(auth.igUserId, auth.accessToken);
+    const authChanged =
+      accountInfo.username !== auth.username ||
+      accountInfo.profilePictureUrl !== auth.profilePictureUrl;
+
+    if (authChanged) {
+      const updatedAuth: InstagramAuth = {
+        ...auth,
+        username: accountInfo.username,
+        profilePictureUrl: accountInfo.profilePictureUrl,
+      };
+      await saveAuth(updatedAuth);
+
+      return {
+        connected: true,
+        username: updatedAuth.username,
+        profilePictureUrl: updatedAuth.profilePictureUrl,
+        igUserId: updatedAuth.igUserId,
+        tokenExpiresAt: updatedAuth.tokenExpiresAt,
+        tokenDaysRemaining: getTokenDaysRemaining(updatedAuth),
+      };
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    if (isInstagramAuthError(message)) {
+      return {
+        connected: false,
+        error: await invalidateAuth(message),
+      };
+    }
+
+    console.error("Instagram account validation failed:", error);
   }
 
   return {
@@ -468,9 +554,7 @@ export async function publishSingleImage(params: {
 
     return { success: true, igPostId: postId, permalink };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    const retryable = !message.includes("token") && !message.includes("permission");
-    return { success: false, error: message, retryable };
+    return getPublishFailure(error);
   }
 }
 
@@ -545,9 +629,7 @@ export async function publishCarousel(params: {
 
     return { success: true, igPostId: postId, permalink };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    const retryable = !message.includes("token") && !message.includes("permission");
-    return { success: false, error: message, retryable };
+    return getPublishFailure(error);
   }
 }
 
@@ -580,8 +662,6 @@ export async function publishStory(params: {
 
     return { success: true, igPostId: postId };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    const retryable = !message.includes("token") && !message.includes("permission");
-    return { success: false, error: message, retryable };
+    return getPublishFailure(error);
   }
 }

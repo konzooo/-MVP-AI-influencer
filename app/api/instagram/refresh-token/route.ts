@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { loadAuth, saveAuth, refreshLongLivedToken, isTokenExpired, getTokenDaysRemaining } from "@/lib/instagram";
+import {
+  deleteAuth,
+  getTokenDaysRemaining,
+  isTokenExpired,
+  loadAuth,
+  refreshLongLivedToken,
+  saveAuth,
+} from "@/lib/instagram";
 
 export async function POST() {
   try {
@@ -37,8 +44,18 @@ export async function POST() {
     });
   } catch (error) {
     console.error("Token refresh error:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+
+    if (message.toLowerCase().includes("session has been invalidated")) {
+      await deleteAuth();
+      return NextResponse.json(
+        { error: "Instagram session expired after a password or security change. Reconnect your account." },
+        { status: 401 }
+      );
+    }
+
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown error" },
+      { error: message },
       { status: 500 }
     );
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -27,14 +27,12 @@ export function InstagramAccountDialog({
 }: InstagramAccountDialogProps) {
   const { account, loading, connect, disconnect, refreshToken, refresh } =
     useInstagramAccount();
-  const [remaining, setRemaining] = useState(25);
-  const [todayCount, setTodayCount] = useState(0);
+  const remaining = getRemainingPublishes();
+  const todayCount = getPublishCountLast24h();
 
   useEffect(() => {
     if (open) {
       refresh();
-      setRemaining(getRemainingPublishes());
-      setTodayCount(getPublishCountLast24h());
     }
   }, [open, refresh]);
 
@@ -151,12 +149,17 @@ export function InstagramAccountDialog({
                 Connect your Instagram Business or Creator account to publish
                 posts directly from this app.
               </p>
+              {account.error && (
+                <p className="mt-3 max-w-sm text-xs leading-relaxed text-amber-400">
+                  {account.error}
+                </p>
+              )}
               <Button
                 onClick={connect}
                 className="mt-6 gap-2 bg-violet-600 text-white hover:bg-violet-700"
               >
                 <Instagram className="h-4 w-4" />
-                Connect Instagram Account
+                {account.error ? "Reconnect Instagram Account" : "Connect Instagram Account"}
               </Button>
               <a
                 href="https://developers.facebook.com"
