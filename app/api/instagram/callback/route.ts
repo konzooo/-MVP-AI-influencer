@@ -10,11 +10,18 @@ export async function GET(request: NextRequest) {
   try {
     const appId = process.env.INSTAGRAM_APP_ID;
     const appSecret = process.env.INSTAGRAM_APP_SECRET;
+    const redirectToHome = (params?: Record<string, string>) => {
+      const url = new URL("/", request.url);
+      if (params) {
+        for (const [key, value] of Object.entries(params)) {
+          url.searchParams.set(key, value);
+        }
+      }
+      return NextResponse.redirect(url);
+    };
 
     if (!appId || !appSecret) {
-      return NextResponse.redirect(
-        new URL("/post-manager?ig_error=missing_config", request.url)
-      );
+      return redirectToHome({ ig_error: "missing_config" });
     }
 
     const { searchParams } = new URL(request.url);
@@ -23,15 +30,11 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("Instagram OAuth error:", error, searchParams.get("error_description"));
-      return NextResponse.redirect(
-        new URL(`/post-manager?ig_error=${encodeURIComponent(error)}`, request.url)
-      );
+      return redirectToHome({ ig_error: error });
     }
 
     if (!code) {
-      return NextResponse.redirect(
-        new URL("/post-manager?ig_error=no_code", request.url)
-      );
+      return redirectToHome({ ig_error: "no_code" });
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
@@ -64,14 +67,10 @@ export async function GET(request: NextRequest) {
 
     await saveAuth(auth);
 
-    return NextResponse.redirect(
-      new URL("/post-manager?ig_connected=true", request.url)
-    );
+    return redirectToHome({ ig_connected: "true" });
   } catch (error) {
     console.error("Instagram callback error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.redirect(
-      new URL(`/post-manager?ig_error=${encodeURIComponent(message)}`, request.url)
-    );
+    return redirectToHome({ ig_error: message });
   }
 }
