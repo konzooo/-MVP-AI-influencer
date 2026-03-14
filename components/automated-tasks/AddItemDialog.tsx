@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -29,6 +30,90 @@ interface AddItemDialogProps {
 
 type ImageSource = "upload" | "library";
 
+const MAX_UPLOAD_BYTES = 2.5 * 1024 * 1024;
+const MAX_UPLOAD_DIMENSION = 1600;
+const JPEG_QUALITIES = [0.85, 0.75, 0.65, 0.55];
+const SCALE_STEPS = [1, 0.85, 0.7, 0.55];
+
+function readBlobAsDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read image"));
+    reader.onload = (event) => resolve(event.target?.result as string);
+    reader.readAsDataURL(blob);
+  });
+}
+
+function loadImageFromFile(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Failed to decode image"));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("Failed to process image"));
+          return;
+        }
+        resolve(blob);
+      },
+      "image/jpeg",
+      quality
+    );
+  });
+}
+
+async function prepareFileForUpload(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Only image uploads are supported");
+  }
+
+  const image = await loadImageFromFile(file);
+  const longestEdge = Math.max(image.width, image.height);
+  const baseScale = Math.min(1, MAX_UPLOAD_DIMENSION / longestEdge);
+
+  for (const step of SCALE_STEPS) {
+    const scale = baseScale * step;
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Failed to process image");
+    }
+
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+
+    for (const quality of JPEG_QUALITIES) {
+      const blob = await canvasToBlob(canvas, quality);
+      if (blob.size <= MAX_UPLOAD_BYTES) {
+        return readBlobAsDataUrl(blob);
+      }
+    }
+  }
+
+  throw new Error("Image is too large. Try a smaller file.");
+}
+
 export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: AddItemDialogProps) {
   const [type, setType] = useState<ItemType>("own_image");
   const [notes, setNotes] = useState("");
@@ -42,6 +127,7 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isCarousel = defaultPostType === "carousel";
+  const canPasteIntoUploader = imageSource === "upload" || type === "copy_post";
 
   const resetState = () => {
     setNotes("");
@@ -72,7 +158,7 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
       .finally(() => setLibraryLoading(false));
   };
 
-  const uploadImageSource = async (payload: { dataUri?: string; src?: string }) => {
+  const uploadImageSource = useCallback(async (payload: { dataUri?: string; src?: string }) => {
     const response = await fetch("/api/upload", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -80,41 +166,99 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
     });
 
     if (!response.ok) {
+      if (response.status === 413) {
+        throw new Error("Image is too large. Try a smaller file.");
+      }
+
       const data = await response.json().catch(() => null);
       throw new Error(data?.error || "Upload failed");
     }
 
     const data = await response.json();
     return data.url as string;
-  };
+  }, []);
+
+  const handleFilesUpload = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+
+    setUploading(true);
+    const successfulUploads: Array<{ preview: string; url: string }> = [];
+    let failedUploads = 0;
+
+    try {
+      for (const file of files) {
+        try {
+          const preview = await prepareFileForUpload(file);
+          const url = await uploadImageSource({ dataUri: preview });
+          successfulUploads.push({ preview, url });
+        } catch (err) {
+          failedUploads += 1;
+          console.error("Upload error:", err);
+        }
+      }
+
+      if (successfulUploads.length > 0) {
+        setUploadedPreviews((prev) => [
+          ...prev,
+          ...successfulUploads.map((upload) => upload.preview),
+        ]);
+        setUploadedUrls((prev) => [
+          ...prev,
+          ...successfulUploads.map((upload) => upload.url),
+        ]);
+      }
+
+      if (failedUploads > 0) {
+        toast.error(
+          failedUploads === files.length
+            ? "Image upload failed. Try a smaller image."
+            : `${failedUploads} image${failedUploads === 1 ? "" : "s"} failed to upload.`
+        );
+      }
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  }, [uploadImageSource]);
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    await handleFilesUpload(Array.from(files));
+  };
 
-    setUploading(true);
-    const newPreviews: string[] = [];
-    const newUrls: string[] = [];
-
-    for (const file of Array.from(files)) {
-      const reader = new FileReader();
-      const preview = await new Promise<string>((resolve) => {
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.readAsDataURL(file);
-      });
-      newPreviews.push(preview);
-
-      try {
-        const url = await uploadImageSource({ dataUri: preview });
-        newUrls.push(url);
-      } catch (err) {
-        console.error("Upload error:", err);
-      }
+  useEffect(() => {
+    if (!open || !canPasteIntoUploader) {
+      return;
     }
 
-    setUploadedPreviews((prev) => [...prev, ...newPreviews]);
-    setUploadedUrls((prev) => [...prev, ...newUrls]);
-    setUploading(false);
-  };
+    const handlePaste = (event: ClipboardEvent) => {
+      if (uploading) {
+        return;
+      }
+
+      const clipboardItems = event.clipboardData?.items;
+      if (!clipboardItems) {
+        return;
+      }
+
+      const imageFiles = Array.from(clipboardItems)
+        .filter((item) => item.type.startsWith("image/"))
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => file !== null);
+
+      if (imageFiles.length === 0) {
+        return;
+      }
+
+      event.preventDefault();
+      void handleFilesUpload(imageFiles);
+    };
+
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [open, canPasteIntoUploader, uploading, handleFilesUpload]);
 
   const removeImage = (idx: number) => {
     setUploadedPreviews((prev) => prev.filter((_, i) => i !== idx));
@@ -154,25 +298,45 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
 
     setUploading(true);
     const selected = libraryImages.filter((img) => selectedLibraryIds.has(img.id));
-    const urls: string[] = [];
-    const previews: string[] = [];
+    const successfulUploads: Array<{ preview: string; url: string }> = [];
+    let failedUploads = 0;
 
-    for (const img of selected) {
-      try {
-        previews.push(img.thumbnailPath);
-        const url = await uploadImageSource({
-          src: img.referencePath || img.imagePath,
-        });
-        urls.push(url);
-      } catch (err) {
-        console.error("Library upload error:", err);
+    try {
+      for (const img of selected) {
+        try {
+          const url = await uploadImageSource({
+            src: img.referencePath || img.imagePath,
+          });
+          successfulUploads.push({ preview: img.thumbnailPath, url });
+        } catch (err) {
+          failedUploads += 1;
+          console.error("Library upload error:", err);
+        }
       }
-    }
 
-    setUploadedPreviews((prev) => [...prev, ...previews]);
-    setUploadedUrls((prev) => [...prev, ...urls]);
-    setSelectedLibraryIds(new Set());
-    setUploading(false);
+      if (successfulUploads.length > 0) {
+        setUploadedPreviews((prev) => [
+          ...prev,
+          ...successfulUploads.map((upload) => upload.preview),
+        ]);
+        setUploadedUrls((prev) => [
+          ...prev,
+          ...successfulUploads.map((upload) => upload.url),
+        ]);
+      }
+
+      if (failedUploads > 0) {
+        toast.error(
+          failedUploads === selected.length
+            ? "Library image upload failed."
+            : `${failedUploads} library image${failedUploads === 1 ? "" : "s"} failed to upload.`
+        );
+      }
+
+      setSelectedLibraryIds(new Set());
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleAdd = () => {
@@ -419,7 +583,7 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
             )}
 
             {/* Drop zone (upload mode or copy_post) */}
-            {(imageSource === "upload" || type === "copy_post") && (
+            {canPasteIntoUploader && (
               <>
                 <div
                   onClick={() => fileInputRef.current?.click()}
@@ -437,6 +601,9 @@ export function AddItemDialog({ open, onOpenChange, defaultPostType, onAdd }: Ad
                   )}
                   <p className="text-xs text-zinc-500">
                     {uploading ? "Uploading..." : "Click or drag to add images"}
+                  </p>
+                  <p className="mt-1 text-[10px] text-zinc-600">
+                    or paste with Cmd/Ctrl+V
                   </p>
                 </div>
                 <input
