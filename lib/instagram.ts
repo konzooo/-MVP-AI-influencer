@@ -251,6 +251,26 @@ export async function fetchAccountInfo(
   };
 }
 
+export async function fetchAuthenticatedAccountInfo(
+  accessToken: string
+): Promise<{ userId: string; username: string; profilePictureUrl: string }> {
+  const res = await fetch(
+    `${GRAPH_API_BASE}/me?fields=user_id,username,profile_picture_url&access_token=${accessToken}`
+  );
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Failed to fetch authenticated account info: ${err}`);
+  }
+
+  const data = await res.json();
+  return {
+    userId: String(data.user_id),
+    username: data.username,
+    profilePictureUrl: data.profile_picture_url || "",
+  };
+}
+
 /**
  * Get account status, auto-refreshing token if expiring soon.
  */

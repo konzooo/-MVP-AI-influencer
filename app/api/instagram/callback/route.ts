@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   exchangeCodeForToken,
-  fetchAccountInfo,
+  fetchAuthenticatedAccountInfo,
   saveAuth,
   type InstagramAuth,
 } from "@/lib/instagram";
@@ -42,15 +42,16 @@ export async function GET(request: NextRequest) {
     const redirectUri = `${baseUrl}/api/instagram/callback`;
 
     // Exchange code for long-lived token
-    const { accessToken, userId } = await exchangeCodeForToken(
+    const { accessToken } = await exchangeCodeForToken(
       code,
       appId,
       appSecret,
       redirectUri
     );
 
-    // Fetch account info
-    const { username, profilePictureUrl } = await fetchAccountInfo(userId, accessToken);
+    // Resolve the authenticated account from the token itself.
+    const { userId, username, profilePictureUrl } =
+      await fetchAuthenticatedAccountInfo(accessToken);
 
     // Calculate token expiry (long-lived tokens last 60 days)
     const expiresAt = new Date();
