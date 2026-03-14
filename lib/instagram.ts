@@ -148,10 +148,10 @@ export function getOAuthUrl(appId: string, redirectUri: string): string {
   const params = new URLSearchParams({
     client_id: appId,
     redirect_uri: redirectUri,
-    scope: "instagram_business_basic,instagram_content_publish",
+    scope: "instagram_basic,instagram_content_publish",
     response_type: "code",
   });
-  return `https://api.instagram.com/oauth/authorize?${params.toString()}`;
+  return `https://www.facebook.com/dialog/oauth?${params.toString()}`;
 }
 
 export async function exchangeCodeForToken(
@@ -161,17 +161,15 @@ export async function exchangeCodeForToken(
   redirectUri: string
 ): Promise<{ accessToken: string; userId: string }> {
   // Step 1: Exchange code for short-lived token
-  const shortLivedRes = await fetch("https://api.instagram.com/oauth/access_token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: appId,
-      client_secret: appSecret,
-      grant_type: "authorization_code",
-      redirect_uri: redirectUri,
-      code,
-    }),
-  });
+  const shortLivedRes = await fetch(
+    "https://graph.facebook.com/oauth/access_token?" +
+      new URLSearchParams({
+        client_id: appId,
+        client_secret: appSecret,
+        redirect_uri: redirectUri,
+        code,
+      })
+  );
 
   if (!shortLivedRes.ok) {
     const err = await shortLivedRes.text();
@@ -180,7 +178,16 @@ export async function exchangeCodeForToken(
 
   const shortLived = await shortLivedRes.json();
   const shortToken = shortLived.access_token;
-  const userId = String(shortLived.user_id);
+
+  const meRes = await fetch(
+    `${GRAPH_API_BASE}/me?fields=user_id&access_token=${shortToken}`
+  );
+  if (!meRes.ok) {
+    const err = await meRes.text();
+    throw new Error(`Failed to get Instagram user ID: ${err}`);
+  }
+  const meData = await meRes.json();
+  const userId = String(meData.user_id);
 
   // Step 2: Exchange short-lived for long-lived token
   const longLivedRes = await fetch(
