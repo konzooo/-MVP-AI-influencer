@@ -7,18 +7,19 @@ import {
 } from "@/lib/instagram";
 
 export async function GET(request: NextRequest) {
+  const redirectToHome = (params?: Record<string, string>) => {
+    const url = new URL("/", request.url);
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        url.searchParams.set(key, value);
+      }
+    }
+    return NextResponse.redirect(url);
+  };
+
   try {
     const appId = process.env.INSTAGRAM_APP_ID;
     const appSecret = process.env.INSTAGRAM_APP_SECRET;
-    const redirectToHome = (params?: Record<string, string>) => {
-      const url = new URL("/", request.url);
-      if (params) {
-        for (const [key, value] of Object.entries(params)) {
-          url.searchParams.set(key, value);
-        }
-      }
-      return NextResponse.redirect(url);
-    };
 
     if (!appId || !appSecret) {
       return redirectToHome({ ig_error: "missing_config" });
