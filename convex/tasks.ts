@@ -42,6 +42,60 @@ export const save = mutation({
   },
 });
 
+export const claimRun = mutation({
+  args: {
+    taskId: v.string(),
+    expectedNextRunAt: v.string(),
+    lastRunAt: v.string(),
+    nextRunAt: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("tasks")
+      .withIndex("by_taskId", (q) => q.eq("taskId", args.taskId))
+      .unique();
+
+    if (!existing) {
+      return { claimed: false };
+    }
+
+    let task: {
+      status?: string;
+      nextRunAt?: string | null;
+      [key: string]: unknown;
+    };
+
+    try {
+      task = JSON.parse(existing.data);
+    } catch {
+      return { claimed: false };
+    }
+
+    if (
+      task.status !== "running" ||
+      !task.nextRunAt ||
+      task.nextRunAt !== args.expectedNextRunAt ||
+      new Date(task.nextRunAt) > new Date()
+    ) {
+      return { claimed: false };
+    }
+
+    const updated = {
+      ...task,
+      lastRunAt: args.lastRunAt,
+      nextRunAt: args.nextRunAt,
+      updatedAt: args.lastRunAt,
+    };
+
+    await ctx.db.patch(existing._id, { data: JSON.stringify(updated) });
+
+    return {
+      claimed: true,
+      data: JSON.stringify(updated),
+    };
+  },
+});
+
 export const remove = mutation({
   args: { taskId: v.string() },
   handler: async (ctx, args) => {

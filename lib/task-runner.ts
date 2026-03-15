@@ -23,14 +23,27 @@ async function savePostState(post: PostPlan): Promise<void> {
 }
 import { loadIdentity } from "./identity";
 import { loadIdentityAsync } from "./identity";
-import { saveTask, saveTaskAsync, computeNextRunAt } from "./task-store";
+import {
+  claimTaskRunAsync,
+  saveTask,
+  saveTaskAsync,
+  computeNextRunAt,
+} from "./task-store";
 import {
   selectCharacterReference,
   buildContextFromStyleMode,
   buildContextFromKeywords,
 } from "./reference-selector";
-import { checkDailyLimit, getLLMUsageFromHeaders, recordGeneration, recordLLMCall } from "./cost-tracker";
-import { canPublish, recordPublish } from "./instagram-rate-limit";
+import {
+  checkDailyLimit,
+  checkDailyLimitAsync,
+  getLLMUsageFromHeaders,
+  recordGeneration,
+  recordGenerationAsync,
+  recordLLMCall,
+  recordLLMCallAsync,
+} from "./cost-tracker";
+
 import { loadAISettings } from "./ai-settings";
 import { loadAISettingsAsync } from "./ai-settings";
 import { saveGeneratedImagesToLibrary } from "./generated-image-library";
@@ -45,6 +58,31 @@ async function resolveIdentity() {
 /** Load AI settings from Convex (server) or localStorage (client) */
 async function resolveAISettings() {
   return isServer ? loadAISettingsAsync() : loadAISettings();
+}
+
+/** Record image generation cost (async on server, sync on client) */
+async function resolveRecordGeneration() {
+  if (isServer) {
+    await recordGenerationAsync();
+  } else {
+    recordGeneration();
+  }
+}
+
+/** Record LLM call (async on server, sync on client) */
+async function resolveRecordLLMCall(
+  ...args: Parameters<typeof recordLLMCall>
+) {
+  if (isServer) {
+    await recordLLMCallAsync(...args);
+  } else {
+    recordLLMCall(...args);
+  }
+}
+
+/** Check daily cost limit (async on server, sync on client) */
+async function resolveCheckDailyLimit() {
+  return isServer ? checkDailyLimitAsync() : checkDailyLimit();
 }
 
 /** Save task to Convex (async on server, fire-and-forget on client) */
@@ -342,7 +380,7 @@ export async function generatePostImages(
       log.add(`Generating images for prompt ${promptIdx + 1}/${post.imagePrompts.length}...`);
 
       // Check cost limit before generation
-      const limit = checkDailyLimit();
+      const limit = await resolveCheckDailyLimit();
       if (!limit.allowed) {
         result.error = `Daily generation limit exceeded (${limit.dailySpend}€ / ${limit.dailyStopLimit}€)`;
         log.add(`ERROR: ${result.error}`);
@@ -363,11 +401,15 @@ export async function generatePostImages(
         promptIdx > 0;
 
       let referenceUrls: string[];
-      if (isOwnImageCarouselFollowSlide && charRefUrls.length > 0) {
-        // Ad-hoc own-image carousels use the editable reference set, prefilled with slide 1.
-        referenceUrls = [...charRefUrls];
+      if (isOwnImageCarouselFollowSlide) {
+        // Own-image carousel: use slide 1 (the user's own photo) as the sole reference
+        // for companion slides — same idea as the generated-carousel cascade below.
+        const slide1 = getFilledImageForPrompt(post, 0);
+        referenceUrls = slide1 ? [slide1.url] : [...charRefUrls];
         log.add(
-          `Slide ${promptIdx + 1}: using ${charRefUrls.length} editable reference image(s)`
+          slide1
+            ? `Slide ${promptIdx + 1}: using user's own slide 1 as reference`
+            : `Slide ${promptIdx + 1}: slide 1 not found, falling back to character ref`
         );
       } else if (isCarouselFollowSlide) {
         // For generated carousels, slide 1 remains the sole follow-slide reference.
@@ -445,7 +487,7 @@ export async function generatePostImages(
         }
 
         log.add(`Generated image for prompt ${promptIdx + 1}`);
-        recordGeneration();
+        await resolveRecordGeneration();
 
         // Save after each image so the UI can poll progress
         savePostState(post);
@@ -470,10 +512,19 @@ export async function generatePostImages(
     const generatedCount = post.generatedImages.filter((g) => !g.userProvided).length;
 
     if (filledPromptCount < post.imagePrompts.length) {
-      post.status = "draft";
-      await savePostState(post);
-      result.error = `Some slides are still missing images (${filledPromptCount}/${post.imagePrompts.length} filled)`;
-      log.add(`ERROR: ${result.error}`);
+      // Partial completion (e.g. timeout): keep "generating" so the advancer
+      // can resume on the next tick. Only reset to "draft" on complete failure.
+      if (filledPromptCount > 0) {
+        post.status = "generating";
+        await savePostState(post);
+        result.error = `Generation incomplete — ${filledPromptCount}/${post.imagePrompts.length} slides done (will resume)`;
+        log.add(`PARTIAL: ${result.error}`);
+      } else {
+        post.status = "draft";
+        await savePostState(post);
+        result.error = `Generation failed — no images produced`;
+        log.add(`ERROR: ${result.error}`);
+      }
       return result;
     }
 
@@ -510,7 +561,7 @@ export async function generatePostImages(
  */
 export async function runTask(
   task: Task,
-  options?: { overrideItemId?: string }
+  options?: { overrideItemId?: string; skipTaskLock?: boolean }
 ): Promise<TaskRunResult> {
   const log = createLog();
   const result: TaskRunResult = {
@@ -524,6 +575,34 @@ export async function runTask(
 
   try {
     log.add(`Starting task: "${task.name}"`);
+
+    if (options?.skipTaskLock) {
+      log.add(`Task already locked: nextRunAt advanced to ${task.nextRunAt}`);
+    } else {
+      const lastRunAt = new Date().toISOString();
+      const nextRunAt = computeNextRunAt(task);
+      const shouldClaimScheduledRun =
+        task.status === "running" &&
+        !!task.nextRunAt &&
+        new Date(task.nextRunAt) <= new Date();
+
+      if (shouldClaimScheduledRun) {
+        const claimedTask = await claimTaskRunAsync(task, { lastRunAt, nextRunAt });
+        if (!claimedTask) {
+          result.error = "Task was already picked up by another run";
+          log.add(`SKIP: ${result.error}`);
+          return result;
+        }
+        task = claimedTask;
+      } else {
+        // Advance nextRunAt immediately so concurrent cron ticks don't pick up the same task.
+        task.nextRunAt = nextRunAt;
+        task.lastRunAt = lastRunAt;
+        await resolveTaskSave(task);
+      }
+
+      log.add(`Locked task: nextRunAt advanced to ${task.nextRunAt}`);
+    }
 
     // ─── Step 1: Select inspiration item ───────────────────────────────────────
 
@@ -552,6 +631,25 @@ export async function runTask(
 
     result.usedItem = selectedItem;
     log.add(`Selected item type: ${selectedItem.type}`);
+
+    // ─── Step 2: Deduplicate — skip if a post already exists for this item ───
+
+    if (!result.wasFallback) {
+      try {
+        const { loadPostsAsync } = await import("./store-server");
+        const existingPosts = await loadPostsAsync();
+        const duplicate = existingPosts.find(
+          (p) => p.taskItemId === selectedItem!.id && p.taskId === task.id
+        );
+        if (duplicate) {
+          result.error = `Post already exists for item ${selectedItem.id} (post ${duplicate.id})`;
+          log.add(`SKIP: ${result.error}`);
+          return result;
+        }
+      } catch (err) {
+        log.add(`WARNING: Could not check for duplicate posts: ${err instanceof Error ? err.message : "unknown"}`);
+      }
+    }
 
     // ─── Step 3: Brainstorm / Analyze / Expand ────────────────────────────────
 
@@ -589,7 +687,7 @@ export async function runTask(
         const providerUsed = (expandRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.expandCarousel;
         const expandPlan = await expandRes.json();
         const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(expandRes.headers) : undefined;
-        recordLLMCall(providerUsed, "expand_carousel", usage?.cost ?? 0, usage);
+        await resolveRecordLLMCall(providerUsed, "expand_carousel", usage?.cost ?? 0, usage);
         post = createEmptyPost("from_own_images", "carousel");
         applyOwnImageCarouselPlan(post, expandPlan as AIPlan);
         post.status = "approved"; // needs generation for slides 2-3
@@ -642,7 +740,7 @@ export async function runTask(
         const providerUsed = (analyzeRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.analyzeImages;
         const analyzePlan = await analyzeRes.json();
         const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(analyzeRes.headers) : undefined;
-        recordLLMCall(providerUsed, "analyze_images", usage?.cost ?? 0, usage);
+        await resolveRecordLLMCall(providerUsed, "analyze_images", usage?.cost ?? 0, usage);
         post = createEmptyPost("from_own_images", selectedItem.postType);
         applyAiPlan(post, analyzePlan as AIPlan);
         post.status = "ready"; // skips generation — own images are final
@@ -692,7 +790,7 @@ export async function runTask(
       const providerUsed = (brainstormRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.brainstormCopyPost;
       const brainstormPlan = await brainstormRes.json();
       const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(brainstormRes.headers) : undefined;
-      recordLLMCall(providerUsed, "brainstorm", usage?.cost ?? 0, usage);
+      await resolveRecordLLMCall(providerUsed, "brainstorm", usage?.cost ?? 0, usage);
       post = createEmptyPost("copy_post", selectedItem.postType);
       applyAiPlan(post, brainstormPlan as AIPlan);
       post.status = "draft";
@@ -731,7 +829,7 @@ export async function runTask(
       const providerUsed = (brainstormRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.brainstormFromScratch;
       const brainstormPlan = await brainstormRes.json();
       const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(brainstormRes.headers) : undefined;
-      recordLLMCall(providerUsed, "brainstorm", usage?.cost ?? 0, usage);
+      await resolveRecordLLMCall(providerUsed, "brainstorm", usage?.cost ?? 0, usage);
       post = createEmptyPost("from_scratch", selectedItem.postType);
       applyAiPlan(post, brainstormPlan as AIPlan);
       post.status = "draft";
@@ -777,125 +875,21 @@ export async function runTask(
       }
     }
 
-    // ─── Step 5: Manual mode — stop here ──────────────────────────────────────
+    // ─── Step 5: Mark item used + save post early ─────────────────────────────
+    // Mark the inspiration item as consumed immediately so concurrent runs
+    // (cron re-fires, manual "Run Now") won't pick the same item again.
 
-    if (task.approvalMode === "manual") {
-      log.add(`Manual approval mode: saving post at ${post.status}, stopping`);
-      await savePostState(post);
-      await markItemUsed(task, selectedItem.id);
-
-      // Always advance nextRunAt so the scheduler doesn't re-fire every 60s
-      task.lastRunAt = new Date().toISOString();
-      task.nextRunAt = computeNextRunAt(task);
-      await resolveTaskSave(task);
-      log.add(`Next run scheduled: ${task.nextRunAt}`);
-
-      result.success = true;
-      result.postId = post.id;
-      return result;
-    }
-
-    // ─── Step 6: Automatic mode — full pipeline ───────────────────────────────
-
-    log.add(`Automatic mode: advancing through pipeline...`);
-
-    // Advance to approved
-    post.status = "approved";
-    log.add(`Status: approved`);
-
-    // If no generation needed (own_image single/story), skip to publish
-    if (selectedItem.type === "own_image" && selectedItem.postType !== "carousel") {
-      post.status = "ready";
-      await savePostState(post);
-      log.add(`Status: ready (own image, no generation needed)`);
-    } else {
-      // Determine style mode hint for character reference selection
-      let styleModeHint: string | undefined;
-      if (selectedItem.type === "from_scratch") {
-        const item = selectedItem as FromScratchInspirationItem;
-        if (item.preferredStyleMode) {
-          styleModeHint = item.preferredStyleMode;
-        }
-      }
-
-      const genResult = await generatePostImages(post, {
-        imageSize: task.defaultImageSize,
-        styleModeHint,
-      });
-
-      for (const line of genResult.log) {
-        log.add(line);
-      }
-
-      if (!genResult.success) {
-        result.error = genResult.error;
-        return result;
-      }
-    }
-
-    log.add(`Post saved: ${post.id}`);
-
-    // ─── Step 7: Auto-publish ─────────────────────────────────────────────────
-
-    log.add(`Attempting to publish to Instagram...`);
-
-    // Check Instagram connection
-    const accountRes = await fetch(getInternalApiUrl("/api/instagram/account"));
-    const account = await accountRes.json();
-
-    if (!account.connected) {
-      log.add(`WARNING: Instagram not connected, leaving post at ready`);
-    } else if (!canPublish()) {
-      log.add(`WARNING: Daily Instagram post limit reached`);
-    } else {
-      try {
-        const publishRes = await fetch(getInternalApiUrl("/api/instagram/publish"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            imageUrls: post.generatedImages
-              .filter((g) => g.selected)
-              .map((g) => g.url),
-            caption: post.caption,
-            hashtags: post.hashtags,
-            postType: post.postType,
-          }),
-        });
-
-        if (!publishRes.ok) {
-          const err = await publishRes.json();
-          log.add(`WARNING: Publish failed: ${err.error}`);
-        } else {
-          const result = await publishRes.json();
-          post.status = "posted";
-          post.publishingInfo = {
-            status: "published",
-            igPostId: result.igPostId,
-            permalink: result.permalink,
-            publishedAt: new Date().toISOString(),
-          };
-          recordPublish();
-          log.add(`Status: posted`);
-          log.add(`Instagram: ${result.permalink}`);
-        }
-      } catch (err) {
-        log.add(
-          `ERROR during publish: ${err instanceof Error ? err.message : "Unknown error"}`
-        );
-      }
-    }
-
-    // ─── Step 8: Finalize ─────────────────────────────────────────────────────
-
-    await savePostState(post);
     await markItemUsed(task, selectedItem.id);
+    await savePostState(post);
+    log.add(`Item "${selectedItem.id}" marked used, post saved`);
 
-    // Update task timestamps
-    task.lastRunAt = new Date().toISOString();
-    task.nextRunAt = computeNextRunAt(task);
-    await resolveTaskSave(task);
+    // ─── Step 6: Done — post advancer handles the rest ────────────────────────
+    // Both manual and automatic tasks stop here. For automatic tasks, the
+    // post-advancer cron picks up from here and advances through
+    // generation → ready → published on subsequent ticks.
 
-    log.add(`Task run complete`);
+    log.add(`Post created at status "${post.status}" — task run complete`);
+    log.add(`Next run scheduled: ${task.nextRunAt}`);
     result.success = true;
     result.postId = post.id;
     return result;

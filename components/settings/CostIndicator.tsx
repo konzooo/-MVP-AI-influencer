@@ -1,26 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { getDailySpend, getCostSettings } from "@/lib/cost-tracker";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { useCostSettings } from "@/hooks/use-settings";
 
 interface CostIndicatorProps {
   onClick?: () => void;
 }
 
 export function CostIndicator({ onClick }: CostIndicatorProps) {
-  const [dailySpend, setDailySpend] = useState(0);
-  const [settings, setSettings] = useState(getCostSettings());
-
-  useEffect(() => {
-    const update = () => {
-      setDailySpend(getDailySpend());
-      setSettings(getCostSettings());
-    };
-
-    update();
-    const interval = setInterval(update, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  const summary = useQuery(api.costLog.getDailySummary);
+  const { settings } = useCostSettings();
+  const dailySpend = summary?.generationSpend ?? 0;
 
   const color =
     dailySpend >= settings.dailyStopLimit

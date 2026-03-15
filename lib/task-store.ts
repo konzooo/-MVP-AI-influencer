@@ -151,11 +151,12 @@ export function getDueTasks(): Task[] {
 
 /**
  * Compute next run time based on task cadence.
- * Preserves the scheduledTime (HH:MM) so runs happen at the same time each period.
+ * Prefers the previously scheduled timestamp so cadence advances stay stable
+ * even when the task runs late or the server timezone differs from the user.
  */
 export function computeNextRunAt(task: Task): string {
-  const base = task.lastRunAt ? new Date(task.lastRunAt) : new Date();
-  const next = new Date(base);
+  const baseTimestamp = task.nextRunAt ?? task.lastRunAt;
+  const next = new Date(baseTimestamp ?? new Date().toISOString());
 
   if (task.cadence.unit === "days") {
     next.setDate(next.getDate() + task.cadence.every);
@@ -163,11 +164,40 @@ export function computeNextRunAt(task: Task): string {
     next.setDate(next.getDate() + task.cadence.every * 7);
   }
 
-  // Apply the fixed time-of-day from scheduledTime (HH:MM)
-  if (task.scheduledTime) {
+  // Only fall back to scheduledTime when there is no prior scheduled timestamp.
+  if (!baseTimestamp && task.scheduledTime) {
     const [hours, minutes] = task.scheduledTime.split(":").map(Number);
     next.setHours(hours, minutes, 0, 0);
   }
 
   return next.toISOString();
+}
+
+/**
+ * Atomically claim a due task run so concurrent cron invocations can't execute it twice.
+ * Returns the updated task snapshot when the claim succeeds, or null when another worker
+ * already advanced it.
+ */
+export async function claimTaskRunAsync(
+  task: Task,
+  timestamps: { lastRunAt: string; nextRunAt: string }
+): Promise<Task | null> {
+  try {
+    const client = getConvexClient();
+    const result = await client.mutation(api.tasks.claimRun, {
+      taskId: task.id,
+      expectedNextRunAt: task.nextRunAt ?? "",
+      lastRunAt: timestamps.lastRunAt,
+      nextRunAt: timestamps.nextRunAt,
+    });
+
+    if (!result.claimed || !result.data) {
+      return null;
+    }
+
+    return JSON.parse(result.data) as Task;
+  } catch (error) {
+    console.error("[TaskStore] Failed to claim task run:", error);
+    return null;
+  }
 }

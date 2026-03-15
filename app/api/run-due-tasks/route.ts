@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
-import { getDueTasksAsync, saveTaskAsync, computeNextRunAt } from "@/lib/task-store";
+import {
+  claimTaskRunAsync,
+  computeNextRunAt,
+  getDueTasksAsync,
+} from "@/lib/task-store";
 
-export const maxDuration = 60; // Vercel Hobby max
+export const maxDuration = 60; // Vercel Hobby max — carousel pipelines may exceed this; claimRun prevents duplicate runs on timeout
 
 /**
  * POST /api/run-due-tasks
@@ -31,30 +35,29 @@ export async function POST(request: Request) {
   const results: { taskId: string; taskName: string; success: boolean; error: string | null }[] = [];
 
   for (const task of dueTasks) {
+    const lastRunAt = new Date().toISOString();
+    const nextRunAt = computeNextRunAt(task);
+    const claimedTask = await claimTaskRunAsync(task, { lastRunAt, nextRunAt });
+
+    if (!claimedTask) {
+      continue;
+    }
+
     try {
       // Dynamically import to avoid edge-runtime issues
       const { runTask } = await import("@/lib/task-runner");
-      const result = await runTask(task);
-
-      // Update nextRunAt even on failure so we don't retry immediately
-      const updated = {
-        ...task,
-        lastRunAt: new Date().toISOString(),
-        nextRunAt: computeNextRunAt(task),
-        updatedAt: new Date().toISOString(),
-      };
-      await saveTaskAsync(updated);
+      const result = await runTask(claimedTask, { skipTaskLock: true });
 
       results.push({
-        taskId: task.id,
-        taskName: task.name,
+        taskId: claimedTask.id,
+        taskName: claimedTask.name,
         success: result.success,
         error: result.error,
       });
     } catch (err) {
       results.push({
-        taskId: task.id,
-        taskName: task.name,
+        taskId: claimedTask.id,
+        taskName: claimedTask.name,
         success: false,
         error: err instanceof Error ? err.message : "Unknown error",
       });

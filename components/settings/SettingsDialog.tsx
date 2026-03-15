@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -14,19 +14,28 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Coins, TrendingUp, Cpu, Image as ImageIcon } from "lucide-react";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import {
   GEMINI_RPD_TIME_ZONE,
-  getDailySpend,
-  getWeeklySpend,
-  getDailyGenerationCount,
-  getDailyLLMCalls,
-  getGeminiRpdCount,
-  getGeminiUsage,
-  getClaudeDailySpend,
-  getWeeklyLLMSpend,
   type CostSettings,
 } from "@/lib/cost-tracker";
 import { useCostSettings } from "@/hooks/use-settings";
+
+function getDateKeyInTimeZone(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "00";
+  const day = parts.find((part) => part.type === "day")?.value ?? "00";
+
+  return `${year}-${month}-${day}`;
+}
 
 interface SettingsDialogProps {
   open: boolean;
@@ -36,14 +45,7 @@ interface SettingsDialogProps {
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { settings: convexCostSettings, saveCostSettings: saveToConvex } = useCostSettings();
   const [settings, setSettings] = useState<CostSettings>(convexCostSettings);
-  const [dailySpend, setDailySpend] = useState(0);
-  const [weeklySpend, setWeeklySpend] = useState(0);
-  const [dailyCount, setDailyCount] = useState(0);
-  const [geminiUsage, setGeminiUsage] = useState(() => getGeminiUsage());
-  const [claudeDailySpend, setClaudeDailySpend] = useState(0);
-  const [claudeWeeklySpend, setClaudeWeeklySpend] = useState(0);
-  const [geminiDailyCount, setGeminiDailyCount] = useState(0);
-  const [claudeDailyCount, setClaudeDailyCount] = useState(0);
+  const usage = useQuery(api.costLog.getUsageSummary);
 
   // Sync cost settings from Convex when dialog opens
   useEffect(() => {
@@ -52,25 +54,26 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     }
   }, [open, convexCostSettings]);
 
-  // Usage stats still come from localStorage (will move to Convex in Phase 2)
-  useEffect(() => {
-    if (!open) return;
+  // Derive all stats from Convex query
+  const dailySpend = usage?.dailyGenSpend ?? 0;
+  const weeklySpend = usage?.weeklyGenSpend ?? 0;
+  const dailyCount = usage?.dailyGenCount ?? 0;
+  const claudeDailySpend = usage?.claudeDailySpend ?? 0;
+  const claudeWeeklySpend = usage?.claudeWeeklySpend ?? 0;
+  const claudeDailyCount = usage?.claudeDailyCount ?? 0;
 
-    const update = () => {
-      setDailySpend(getDailySpend());
-      setWeeklySpend(getWeeklySpend());
-      setDailyCount(getDailyGenerationCount());
-      setGeminiUsage(getGeminiUsage());
-      setClaudeDailySpend(getClaudeDailySpend());
-      setClaudeWeeklySpend(getWeeklyLLMSpend("claude"));
-      setGeminiDailyCount(getGeminiRpdCount());
-      setClaudeDailyCount(getDailyLLMCalls("claude").length);
-    };
+  // Gemini RPD count — filter entries by Pacific timezone day
+  const geminiRpdCount = useMemo(() => {
+    if (!usage?.geminiEntries) return 0;
+    const todayPacific = getDateKeyInTimeZone(new Date(), GEMINI_RPD_TIME_ZONE);
+    return usage.geminiEntries.filter(
+      (e) => getDateKeyInTimeZone(new Date(e.timestamp), GEMINI_RPD_TIME_ZONE) === todayPacific
+    ).length;
+  }, [usage?.geminiEntries]);
 
-    update();
-    const interval = setInterval(update, 2000);
-    return () => clearInterval(interval);
-  }, [open]);
+  const geminiDailyCount = usage?.geminiDailyCount ?? 0;
+  const geminiLimit = Math.max(settings.geminiDailyLimit, 1);
+  const geminiPercentage = Math.min((geminiRpdCount / geminiLimit) * 100, 100);
 
   const handleSave = async () => {
     await saveToConvex(settings);
@@ -116,19 +119,19 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </Badge>
               </div>
               <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1.5">
-                <span>{geminiUsage.count} / {geminiUsage.limit} requests this Pacific day</span>
-                <span>{geminiUsage.percentage.toFixed(0)}%</span>
+                <span>{geminiRpdCount} / {geminiLimit} requests this Pacific day</span>
+                <span>{geminiPercentage.toFixed(0)}%</span>
               </div>
               <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${
-                    geminiUsage.percentage >= 90
+                    geminiPercentage >= 90
                       ? "bg-red-500"
-                      : geminiUsage.percentage >= 70
+                      : geminiPercentage >= 70
                         ? "bg-amber-500"
                         : "bg-emerald-500"
                   }`}
-                  style={{ width: `${geminiUsage.percentage}%` }}
+                  style={{ width: `${geminiPercentage}%` }}
                 />
               </div>
               <p className="text-[10px] text-zinc-600 mt-1">

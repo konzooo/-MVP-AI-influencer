@@ -331,3 +331,66 @@ export function getWeeklyLLMSpend(provider?: LLMProvider): number {
     .filter((e) => new Date(e.timestamp) >= weekAgo && (!provider || e.provider === provider))
     .reduce((sum, e) => sum + e.cost, 0);
 }
+
+// ─── Server-side async variants (Convex-backed) ─────────────────────────
+
+/**
+ * Record a generation call from the server. Writes directly to Convex (awaited).
+ */
+export async function recordGenerationAsync(cost: number = COST_PER_GENERATION): Promise<void> {
+  const timestamp = new Date().toISOString();
+  const client = getConvexClient();
+  await client.mutation(api.costLog.record, {
+    entryType: "generation",
+    timestamp,
+    cost,
+  });
+}
+
+/**
+ * Record an LLM API call from the server. Writes directly to Convex (awaited).
+ */
+export async function recordLLMCallAsync(
+  provider: LLMProvider,
+  callType: LLMCallType,
+  cost: number = 0,
+  usage?: LLMUsageMetadata
+): Promise<void> {
+  const timestamp = new Date().toISOString();
+  const safeCost = Number.isFinite(cost) ? cost : 0;
+  const client = getConvexClient();
+  await client.mutation(api.costLog.record, {
+    entryType: "llm",
+    timestamp,
+    cost: safeCost,
+    provider,
+    callType,
+    inputTokens: usage?.inputTokens,
+    outputTokens: usage?.outputTokens,
+    model: usage?.model,
+  });
+}
+
+/**
+ * Check daily generation limit from the server by reading Convex.
+ */
+export async function checkDailyLimitAsync(): Promise<{
+  allowed: boolean;
+  warning: boolean;
+  dailySpend: number;
+  dailyWarningLimit: number;
+  dailyStopLimit: number;
+}> {
+  const settings = DEFAULT_SETTINGS;
+  const client = getConvexClient();
+  const summary = await client.query(api.costLog.getDailySummary);
+  const dailySpend = summary.generationSpend;
+
+  return {
+    allowed: dailySpend < settings.dailyStopLimit,
+    warning: dailySpend >= settings.dailyWarningLimit,
+    dailySpend,
+    dailyWarningLimit: settings.dailyWarningLimit,
+    dailyStopLimit: settings.dailyStopLimit,
+  };
+}
