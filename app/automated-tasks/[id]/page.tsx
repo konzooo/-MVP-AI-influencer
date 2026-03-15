@@ -84,6 +84,8 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [showAddItem, setShowAddItem] = useState(false);
   const [runStatus, setRunStatus] = useState<RunStatus>("idle");
   const [runLog, setRunLog] = useState<string[]>([]);
+  const [advanceStatus, setAdvanceStatus] = useState<RunStatus>("idle");
+  const [advanceLog, setAdvanceLog] = useState<string[]>([]);
   const [modalPostId, setModalPostId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const scheduleInputRef = useRef<HTMLInputElement | null>(null);
@@ -242,6 +244,27 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     }
   };
 
+  const handleAdvanceNow = async () => {
+    setAdvanceStatus("running");
+    setAdvanceLog([]);
+    try {
+      const res = await fetch("/api/advance-posts", { method: "POST" });
+      const result = await res.json();
+      setAdvanceLog(result.log ?? []);
+      setAdvanceStatus(result.advanced ? "done" : result.error ? "error" : "done");
+      if (result.error) {
+        toast.error(`Advance failed: ${result.error}`);
+      } else if (result.advanced) {
+        toast.success(`Advanced post → ${result.action}`);
+      } else {
+        toast.info("No posts to advance right now");
+      }
+    } catch (err) {
+      setAdvanceStatus("error");
+      toast.error("Advance request failed");
+    }
+  };
+
   const handleDeletePost = (postId: string) => {
     deletePost(postId);
     setDeleteConfirmId(null);
@@ -346,6 +369,19 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 className="border-zinc-700 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
               >
                 {runStatus === "running" ? "Running..." : "Run Now"}
+              </Button>
+            )}
+
+            {/* Advance Now: manual trigger for post advancer (automatic mode only) */}
+            {task.approvalMode === "automatic" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleAdvanceNow}
+                disabled={advanceStatus === "running"}
+                className="border-blue-800 text-blue-400 hover:bg-blue-950 disabled:opacity-50"
+              >
+                {advanceStatus === "running" ? "Advancing..." : "Advance Now"}
               </Button>
             )}
           </div>
@@ -462,6 +498,11 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
           {/* Run log */}
           <TaskRunLog log={runLog} status={runStatus} />
+
+          {/* Advance log */}
+          {advanceLog.length > 0 && (
+            <TaskRunLog log={advanceLog} status={advanceStatus} />
+          )}
 
           {/* Inspiration Queue */}
           <Card className="border-zinc-800 bg-zinc-900/50 p-4">
