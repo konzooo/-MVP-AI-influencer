@@ -47,6 +47,7 @@ import {
 import { loadAISettings } from "./ai-settings";
 import { loadAISettingsAsync } from "./ai-settings";
 import { saveGeneratedImagesToLibrary } from "./generated-image-library";
+import { canPublishAsync, recordPublishAsync } from "./instagram-rate-limit";
 
 const isServer = typeof window === "undefined";
 
@@ -884,12 +885,93 @@ export async function runTask(
     await savePostState(post);
     log.add(`Item "${selectedItem.id}" marked used, post saved`);
 
-    // ─── Step 6: Done — post advancer handles the rest ────────────────────────
-    // Both manual and automatic tasks stop here. For automatic tasks, the
-    // post-advancer cron picks up from here and advances through
-    // generation → ready → published on subsequent ticks.
+    // ─── Step 6: Auto-advance pipeline (automatic mode only) ──────────────────
+    // For automatic tasks, run the full pipeline inline: generate → publish.
+    // For manual tasks, stop here — user handles the rest via UI.
 
-    log.add(`Post created at status "${post.status}" — task run complete`);
+    if (!post.autoAdvance) {
+      log.add(`Post created at status "${post.status}" — task run complete (manual mode)`);
+      log.add(`Next run scheduled: ${task.nextRunAt}`);
+      result.success = true;
+      result.postId = post.id;
+      return result;
+    }
+
+    log.add(`Auto-advance enabled — continuing pipeline...`);
+
+    // Step 6a: Generate images (if needed)
+    if (post.status === "draft" || post.status === "approved") {
+      post.status = "approved";
+
+      let styleModeHint: string | undefined;
+      if (selectedItem.type === "from_scratch") {
+        const fsItem = selectedItem as FromScratchInspirationItem;
+        if (fsItem.preferredStyleMode) {
+          styleModeHint = fsItem.preferredStyleMode;
+        }
+      }
+
+      log.add("Starting image generation...");
+      const genResult = await generatePostImages(post, {
+        imageSize: task.defaultImageSize,
+        styleModeHint,
+      });
+
+      for (const line of genResult.log) log.add(line);
+
+      if (!genResult.success) {
+        log.add(`Generation incomplete — post at status "${post.status}"`);
+        // Don't fail the task run — the draft was created successfully
+      }
+    }
+
+    // Step 6b: Publish to Instagram (if ready)
+    if (post.status === "ready") {
+      log.add("Checking Instagram connection...");
+      const accountRes = await fetch(getInternalApiUrl("/api/instagram/account"));
+      const account = await accountRes.json();
+
+      if (!account.connected) {
+        log.add("WARNING: Instagram not connected, leaving post at ready");
+      } else if (!(await canPublishAsync())) {
+        log.add("WARNING: Daily Instagram post limit reached, leaving post at ready");
+      } else {
+        log.add("Publishing to Instagram...");
+        const imageUrls = post.generatedImages
+          .filter((g) => g.selected)
+          .map((g) => g.url);
+
+        const publishRes = await fetch(getInternalApiUrl("/api/instagram/publish"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageUrls,
+            caption: post.caption,
+            hashtags: post.hashtags,
+            postType: post.postType,
+          }),
+        });
+
+        if (!publishRes.ok) {
+          const err = await publishRes.json();
+          log.add(`WARNING: Publish failed: ${err.error}`);
+        } else {
+          const published = await publishRes.json();
+          post.status = "posted";
+          post.publishingInfo = {
+            status: "published",
+            igPostId: published.igPostId,
+            permalink: published.permalink,
+            publishedAt: new Date().toISOString(),
+          };
+          await recordPublishAsync();
+          await savePostState(post);
+          log.add(`Published: ${published.permalink}`);
+        }
+      }
+    }
+
+    log.add(`Post final status: "${post.status}"`);
     log.add(`Next run scheduled: ${task.nextRunAt}`);
     result.success = true;
     result.postId = post.id;

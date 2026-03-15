@@ -104,8 +104,6 @@ export interface PostPlan {
   selectedCharacterRefPath?: string;  // e.g. "/api/reference-images/alba_028.jpg" or a reference-sized source path
   characterRefs?: { id: string; path: string }[];  // Multiple character references (up to 10)
 
-  // Post advancer lock — set while the advancer is working on this post
-  advancingAt?: string; // ISO timestamp; cleared when done, expires after 90s
 }
 
 // Reference Image Library Types

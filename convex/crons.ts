@@ -15,10 +15,4 @@ crons.interval(
   internal.taskRunner.checkDuePosts
 );
 
-crons.interval(
-  "advance-posts",
-  { minutes: 1 },
-  internal.taskRunner.advancePosts
-);
-
 export default crons;
