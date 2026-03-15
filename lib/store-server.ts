@@ -51,6 +51,29 @@ export async function loadPostsAsync(): Promise<PostPlan[]> {
   }
 }
 
+/**
+ * Atomically claim a post for advancement.
+ * Returns the locked PostPlan if claimed, or null if another worker holds the lock.
+ */
+export async function claimPostAdvanceAsync(
+  postId: string,
+  lockTtlMs: number
+): Promise<PostPlan | null> {
+  try {
+    const client = getConvexClient();
+    const result = await client.mutation(api.posts.claimAdvance, {
+      postId,
+      lockTtlMs,
+    });
+
+    if (!result.claimed || !result.data) return null;
+    return JSON.parse(result.data) as PostPlan;
+  } catch (error) {
+    console.error("[Store] Failed to claim post advance:", error);
+    return null;
+  }
+}
+
 export async function savePostAsync(post: PostPlan): Promise<void> {
   const updated = { ...post, updatedAt: new Date().toISOString() };
   const stripped = stripLargeData(updated);

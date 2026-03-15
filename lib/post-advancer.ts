@@ -1,16 +1,22 @@
 /**
  * Post Advancer
  *
- * Advances ONE automatic-mode post per cron tick through the pipeline:
+ * Advances ONE auto-advance post per cron tick through the pipeline:
  *   draft/approved → generatePostImages() → ready
  *   generating     → resume generatePostImages() (skips filled slides)
  *   ready          → publish to Instagram → posted
+ *
+ * Only posts with `autoAdvance: true` are eligible (set at creation time
+ * by the task runner when the task is in automatic mode).
+ *
+ * Uses atomic `claimAdvance` Convex mutation to prevent concurrent ticks
+ * from advancing the same post.
  *
  * Called by POST /api/advance-posts every minute.
  */
 
 import { PostPlan } from "./types";
-import { loadPostsAsync, savePostAsync } from "./store-server";
+import { loadPostsAsync, savePostAsync, claimPostAdvanceAsync } from "./store-server";
 import { loadTasksAsync } from "./task-store";
 import { generatePostImages } from "./task-runner";
 import { canPublishAsync, recordPublishAsync } from "./instagram-rate-limit";
@@ -61,19 +67,12 @@ export async function advanceOnePost(): Promise<AdvanceResult> {
   };
 
   try {
-    const [posts, tasks] = await Promise.all([
-      loadPostsAsync(),
-      loadTasksAsync(),
-    ]);
-
-    const taskMap = new Map(tasks.map((t) => [t.id, t]));
+    const posts = await loadPostsAsync();
     const now = Date.now();
 
-    // Filter to posts that need advancing
+    // Filter to posts that need advancing — ONLY posts marked autoAdvance
     const advanceable = posts.filter((post) => {
-      if (!post.taskId) return false;
-      const task = taskMap.get(post.taskId);
-      if (!task || task.approvalMode !== "automatic") return false;
+      if (!post.autoAdvance) return false;
       if (!STATUS_PRIORITY[post.status]) return false;
 
       // Skip if currently being advanced (lock not expired)
@@ -106,15 +105,21 @@ export async function advanceOnePost(): Promise<AdvanceResult> {
     });
 
     const post = advanceable[0];
-    const task = taskMap.get(post.taskId!)!;
 
     addLog(`Advancing post "${post.title}" (${post.id}) from status "${post.status}"`);
 
-    // Claim the post with an advancingAt lock
-    const locked: PostPlan = { ...post, advancingAt: new Date().toISOString() };
-    await savePostAsync(locked);
+    // Atomically claim the post — prevents concurrent cron ticks from working on it
+    const locked = await claimPostAdvanceAsync(post.id, ADVANCING_LOCK_TTL_MS);
+    if (!locked) {
+      addLog(`Failed to claim post ${post.id} (already locked by another worker)`);
+      return result;
+    }
 
     result.postId = post.id;
+
+    // Load task lazily — only needed for imageSize and styleModeHint
+    const tasks = await loadTasksAsync();
+    const task = tasks.find((t) => t.id === post.taskId);
 
     try {
       if (post.status === "draft" || post.status === "approved") {
@@ -123,7 +128,7 @@ export async function advanceOnePost(): Promise<AdvanceResult> {
 
         // Determine style mode hint from the inspiration item
         let styleModeHint: string | undefined;
-        if (post.taskItemId) {
+        if (post.taskItemId && task) {
           const item = task.inspirationItems.find((i) => i.id === post.taskItemId);
           if (item?.type === "from_scratch") {
             const fsItem = item as FromScratchInspirationItem;
@@ -135,7 +140,7 @@ export async function advanceOnePost(): Promise<AdvanceResult> {
 
         addLog("Starting image generation...");
         const genResult = await generatePostImages(locked, {
-          imageSize: task.defaultImageSize,
+          imageSize: task?.defaultImageSize ?? "landscape_4_3",
           styleModeHint,
         });
 
@@ -150,7 +155,7 @@ export async function advanceOnePost(): Promise<AdvanceResult> {
         // Resume partial generation
         addLog("Resuming partial image generation...");
         const genResult = await generatePostImages(locked, {
-          imageSize: task.defaultImageSize,
+          imageSize: task?.defaultImageSize ?? "landscape_4_3",
         });
 
         for (const line of genResult.log) addLog(line);

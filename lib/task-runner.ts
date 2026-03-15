@@ -842,6 +842,7 @@ export async function runTask(
 
     post.taskId = task.id;
     post.taskItemId = selectedItem.id;
+    post.autoAdvance = task.approvalMode === "automatic";
 
     // Select and persist character reference at draft creation time
     // (so it stays consistent across modal opens and generation)
