@@ -283,10 +283,14 @@ export async function generatePostImages(
     savePostState(post);
 
     // Resolve character references — use stored refs if available, otherwise select fresh
+    // For own-image posts: skip character ref entirely — slide 1 (user's photo) is the reference
     // Supports new multi-ref format (characterRefs[]) and legacy single ref
     let charRefPaths: { id: string; path: string }[] = [];
+    const charRefUrls: string[] = [];
 
-    if (post.characterRefs && post.characterRefs.length > 0) {
+    if (post.creationMode === "from_own_images") {
+      log.add("Own-image post — skipping character reference (will use slide 1 as reference)");
+    } else if (post.characterRefs && post.characterRefs.length > 0) {
       charRefPaths = post.characterRefs;
       log.add(`Using ${charRefPaths.length} stored character reference(s): ${charRefPaths.map(r => r.id).join(", ")}`);
     } else if (post.selectedCharacterRefId && post.selectedCharacterRefPath) {
@@ -333,9 +337,8 @@ export async function generatePostImages(
       log.add(`Selected character reference: ${charRef.id}`);
     }
 
-    // Upload all character references to fal storage so they're publicly accessible
+    // Upload character references to fal storage (skipped for own-image posts)
     const baseUrl = getInternalApiBaseUrl();
-    const charRefUrls: string[] = [];
 
     for (const ref of charRefPaths) {
       log.add(`Uploading character reference ${ref.id} to fal storage...`);
