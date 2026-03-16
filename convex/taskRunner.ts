@@ -56,3 +56,13 @@ export const checkDuePosts = internalAction({
   },
 });
 
+/**
+ * Internal action called by the Convex cron.
+ * Advances one autoAdvance post one step (generate or publish).
+ */
+export const advancePosts = internalAction({
+  handler: async () => {
+    await callCronEndpoint("/api/advance-posts", "AdvancePosts");
+  },
+});
+
