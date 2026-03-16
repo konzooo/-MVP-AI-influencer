@@ -46,7 +46,6 @@ import {
 
 import { loadAISettings } from "./ai-settings";
 import { loadAISettingsAsync } from "./ai-settings";
-import { saveGeneratedImagesToLibrary } from "./generated-image-library";
 
 const isServer = typeof window === "undefined";
 
@@ -479,10 +478,6 @@ export async function generatePostImages(
         };
 
         post.generatedImages.unshift(generatedImage);
-        saveGeneratedImagesToLibrary([generatedImage], {
-          postId: post.id,
-          postTitle: post.title,
-        });
 
         if (post.postType === "carousel" && promptIdx === 0) {
           slide0GeneratedUrl = img.url;

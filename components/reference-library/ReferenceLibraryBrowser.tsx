@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ReferenceImageCard } from "@/components/reference-library/ReferenceImageCard";
 import { ReferenceLibraryFilters } from "@/components/reference-library/ReferenceLibraryFilters";
@@ -9,11 +11,12 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   loadGeneratedImageLibrary,
+  saveGeneratedImagesToLibrary,
   GENERATED_IMAGE_LIBRARY_UPDATED_EVENT,
   isGeneratedImageLibraryStorageEvent,
 } from "@/lib/generated-image-library";
-import { Images, Loader2, AlertCircle, Sparkles } from "lucide-react";
-import type { ReferenceImage, ReferenceLibraryFilters as FiltersType } from "@/lib/types";
+import { Images, Loader2, AlertCircle, Sparkles, RefreshCw } from "lucide-react";
+import type { PostPlan, ReferenceImage, ReferenceLibraryFilters as FiltersType } from "@/lib/types";
 
 interface ReferenceLibraryBrowserProps {
   /** If true, enables selection mode by default */
@@ -48,6 +51,8 @@ export function ReferenceLibraryBrowser({
     expression: "all",
     timeOfDay: "all"
   });
+  const [recovering, setRecovering] = useState(false);
+  const rawPosts = useQuery(api.posts.list);
 
   const loadReferenceImages = useCallback(async () => {
     try {
@@ -176,6 +181,33 @@ export function ReferenceLibraryBrowser({
     }
   };
 
+  const handleRecoverFromPosts = useCallback(() => {
+    if (!rawPosts) return;
+    setRecovering(true);
+    try {
+      const posts = rawPosts
+        .map((row: { data: string }) => {
+          try { return JSON.parse(row.data) as PostPlan; } catch { return null; }
+        })
+        .filter((p: PostPlan | null): p is PostPlan => p !== null);
+
+      let totalSaved = 0;
+      for (const post of posts) {
+        const images = post.generatedImages?.filter((img) => img.url && !img.userProvided);
+        if (images?.length) {
+          saveGeneratedImagesToLibrary(images, { postId: post.id, postTitle: post.title });
+          totalSaved += images.length;
+        }
+      }
+      loadGeneratedImages();
+      toast.success(`Recovered ${totalSaved} image${totalSaved !== 1 ? "s" : ""} from ${posts.length} posts`);
+    } catch (err) {
+      toast.error("Recovery failed: " + (err instanceof Error ? err.message : "Unknown error"));
+    } finally {
+      setRecovering(false);
+    }
+  }, [rawPosts, loadGeneratedImages]);
+
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
@@ -245,6 +277,28 @@ export function ReferenceLibraryBrowser({
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+
+            {activeTab === "generated" && (
+              <div className="mt-3 flex items-center justify-between">
+                <p className="text-xs text-zinc-500">
+                  {generatedImages.length} image{generatedImages.length !== 1 ? "s" : ""} in library
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRecoverFromPosts}
+                  disabled={recovering || !rawPosts}
+                  className="h-7 gap-1.5 border-zinc-700 text-xs text-zinc-400 hover:text-zinc-200"
+                >
+                  {recovering ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3 w-3" />
+                  )}
+                  Recover from posts
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Filters */}
