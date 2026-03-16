@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, ChevronDown, Clock, Loader2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, Clock, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const statusConfig: Record<
@@ -65,6 +65,29 @@ const ALL_STATUSES: PostStatus[] = [
   "posted",
 ];
 
+/** Warnings for specific status transitions */
+function getTransitionWarning(from: PostStatus, to: PostStatus): string | null {
+  if (from === "posted") {
+    return "This post is already published on Instagram. Changing the status won't remove it from Instagram.";
+  }
+  if (to === "ready") {
+    return "Make sure all images are generated. Publishing a post without images will fail.";
+  }
+  if (to === "posted") {
+    return "This will mark the post as posted without actually publishing to Instagram.";
+  }
+  if (to === "generating") {
+    return "This won't start generation automatically. Use the Generate button instead.";
+  }
+  if (to === "publishing") {
+    return "This won't trigger publishing. Use the Publish button from the Ready state instead.";
+  }
+  if (from === "generating" && to === "draft") {
+    return "This will reset the post to draft. Any partially generated images will be kept.";
+  }
+  return null;
+}
+
 interface StatusBadgeProps {
   status: PostStatus;
   /** When provided, the badge becomes clickable and allows changing the status. */
@@ -83,6 +106,7 @@ export function StatusBadge({
 }: StatusBadgeProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingStatus, setPendingStatus] = useState<PostStatus | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const config = statusConfig[status];
 
   if (!onStatusChange) {
@@ -108,9 +132,10 @@ export function StatusBadge({
   const handleSelect = (newStatus: PostStatus) => {
     if (newStatus === status) return;
 
-    // Changing away from "posted" requires confirmation
-    if (status === "posted") {
+    const w = getTransitionWarning(status, newStatus);
+    if (w) {
       setPendingStatus(newStatus);
+      setWarning(w);
       setConfirmOpen(true);
       return;
     }
@@ -124,6 +149,7 @@ export function StatusBadge({
     }
     setConfirmOpen(false);
     setPendingStatus(null);
+    setWarning(null);
   };
 
   const selectableStatuses = allowedStatuses?.length
@@ -199,10 +225,19 @@ export function StatusBadge({
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Change status from Posted?</DialogTitle>
-            <DialogDescription>
-              This post is marked as posted. Are you sure you want to change its
-              status to &ldquo;{pendingStatus && statusConfig[pendingStatus].label}&rdquo;?
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-400" />
+              Change status?
+            </DialogTitle>
+            <DialogDescription className="space-y-2">
+              <span className="block">
+                {statusConfig[status].label} → {pendingStatus && statusConfig[pendingStatus].label}
+              </span>
+              {warning && (
+                <span className="block text-amber-400/80">
+                  {warning}
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

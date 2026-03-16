@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { PostPlan, ReferenceImage, ImagePrompt } from "@/lib/types";
+import { PostPlan, PostStatus, ReferenceImage, ImagePrompt } from "@/lib/types";
 import { Task } from "@/lib/task-types";
 import { deletePost, loadPosts, savePost } from "@/lib/store";
 import { usePostActions } from "@/hooks/use-post-actions";
@@ -1286,7 +1286,6 @@ export function PostViewModal({
   const isManualPost = post.creationMode === "manual";
   const isOwnImageCarousel =
     post.creationMode === "from_own_images" && post.postType === "carousel";
-  const canManuallyToggleStatus = !post.taskId && (isDraft || isApproved);
 
   // Publishing validation
   const selectedImages = post.generatedImages.filter((i) => i.selected);
@@ -1363,11 +1362,12 @@ export function PostViewModal({
     ? "Add at least 1 reference image to generate"
     : "Add at least 1 character reference to generate";
 
-  const handleStatusChange = (newStatus: "draft" | "approved") => {
-    if (!canManuallyToggleStatus || newStatus === post.status) return;
+  const handleStatusChange = (newStatus: PostStatus) => {
+    if (newStatus === post.status) return;
     const updated: PostPlan = {
       ...post,
       status: newStatus,
+      updatedAt: new Date().toISOString(),
     };
     setPost(updated);
     savePost(updated);
@@ -1414,19 +1414,7 @@ export function PostViewModal({
               </div>
               <StatusBadge
                 status={post.status}
-                onStatusChange={
-                  canManuallyToggleStatus
-                    ? (newStatus) => {
-                        if (
-                          newStatus === "draft" ||
-                          newStatus === "approved"
-                        ) {
-                          handleStatusChange(newStatus);
-                        }
-                      }
-                    : undefined
-                }
-                allowedStatuses={canManuallyToggleStatus ? ["draft", "approved"] : undefined}
+                onStatusChange={handleStatusChange}
               />
             </DialogTitle>
             <div className="flex flex-wrap items-center gap-2 pt-1">
