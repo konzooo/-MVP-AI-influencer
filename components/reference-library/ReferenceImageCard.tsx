@@ -11,12 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Copy, MapPin, Camera, Clock, Smile, Edit2, Save, X, Loader2, Sparkles } from "lucide-react";
+import { Copy, MapPin, Camera, Clock, Smile, Edit2, Save, X, Loader2, Sparkles, Trash2 } from "lucide-react";
 import type { ReferenceImage } from "@/lib/types";
 
 interface ReferenceImageCardProps {
   image: ReferenceImage;
   onSelect?: (image: ReferenceImage) => void;
+  onDelete?: (image: ReferenceImage) => Promise<void>;
   selectable?: boolean;
   selected?: boolean;
 }
@@ -40,6 +41,7 @@ type EditData = {
 export function ReferenceImageCard({
   image,
   onSelect,
+  onDelete,
   selectable = false,
   selected = false
 }: ReferenceImageCardProps) {
@@ -49,6 +51,7 @@ export function ReferenceImageCard({
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [editData, setEditData] = useState<EditData>({
     summary: image.summary,
@@ -140,6 +143,25 @@ export function ReferenceImageCard({
       image_style_detail: image.metadata.image_style.detail,
     });
     setIsEditMode(false);
+  };
+
+  const handleDelete = async () => {
+    if (!onDelete || isDeleting) return;
+
+    const confirmed = window.confirm(
+      `Delete "${image.filename}" from the library? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsDeleting(true);
+      await onDelete(image);
+      setIsDialogOpen(false);
+    } catch {
+      // Parent handler already shows the error toast.
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const imageElement = (
@@ -254,14 +276,54 @@ export function ReferenceImageCard({
             <div className="space-y-4">
               {/* Edit Mode Controls */}
               {isEditable && !isEditMode && (
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => setIsEditMode(true)}
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 gap-2"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                    Edit Details
+                  </Button>
+                  {onDelete && (
+                    <Button
+                      onClick={handleDelete}
+                      disabled={isDeleting}
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 border-red-900/60 text-red-300 hover:bg-red-950/40 hover:text-red-200"
+                    >
+                      {isDeleting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                      Delete
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {!isEditable && onDelete && !isEditMode && (
                 <Button
-                  onClick={() => setIsEditMode(true)}
+                  onClick={handleDelete}
+                  disabled={isDeleting}
                   variant="outline"
                   size="sm"
-                  className="w-full gap-2"
+                  className="w-full gap-2 border-red-900/60 text-red-300 hover:bg-red-950/40 hover:text-red-200"
                 >
-                  <Edit2 className="h-4 w-4" />
-                  Edit Details
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-4 w-4" />
+                      Delete from Library
+                    </>
+                  )}
                 </Button>
               )}
 

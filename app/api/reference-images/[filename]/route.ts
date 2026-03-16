@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import {
+  deleteReferenceImage,
   readReferenceImageAsset,
   updateReferenceImageMetadata,
 } from "@/lib/reference-image-library";
@@ -72,6 +73,46 @@ export async function PUT(
     const message =
       error instanceof Error ? error.message : "Failed to update image metadata";
     console.error("Failed to update legacy reference image metadata:", error);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ filename: string }> }
+) {
+  try {
+    const resolvedParams = await params;
+    const filename = resolvedParams.filename;
+
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+    if (convexUrl) {
+      try {
+        const client = new ConvexHttpClient(convexUrl);
+        const filenameNoExt = basename(filename, extname(filename));
+        const imageId = `ref-${filenameNoExt}`;
+        await client.mutation(api.referenceImages.remove, { imageId });
+        return NextResponse.json({
+          success: true,
+          message: "Image deleted successfully",
+        });
+      } catch (convexError) {
+        console.warn(
+          "[DELETE /api/reference-images] Convex delete failed, falling back to filesystem:",
+          convexError
+        );
+      }
+    }
+
+    await deleteReferenceImage(LEGACY_SOURCE_KEY, filename);
+    return NextResponse.json({
+      success: true,
+      message: "Image deleted successfully",
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to delete image";
+    console.error("Failed to delete legacy reference image:", error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

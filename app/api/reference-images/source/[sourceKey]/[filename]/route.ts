@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import {
+  deleteReferenceImage,
   isReferenceLibrarySourceKey,
   readReferenceImageAsset,
   updateReferenceImageMetadata,
@@ -96,6 +97,57 @@ export async function PUT(
     const message =
       error instanceof Error ? error.message : "Failed to update image metadata";
     console.error("Failed to update reference image metadata:", error);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  {
+    params,
+  }: {
+    params: Promise<{ sourceKey: string; filename: string }>;
+  }
+) {
+  try {
+    const resolvedParams = await params;
+    const { sourceKey, filename } = resolvedParams;
+
+    if (!isReferenceLibrarySourceKey(sourceKey)) {
+      return NextResponse.json(
+        { error: "Unknown reference image source" },
+        { status: 404 }
+      );
+    }
+
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+    if (convexUrl) {
+      try {
+        const client = new ConvexHttpClient(convexUrl);
+        const filenameNoExt = basename(filename, extname(filename));
+        const imageId = `ref-${filenameNoExt}`;
+        await client.mutation(api.referenceImages.remove, { imageId });
+        return NextResponse.json({
+          success: true,
+          message: "Image deleted successfully",
+        });
+      } catch (convexError) {
+        console.warn(
+          "[DELETE /api/reference-images/source] Convex delete failed, falling back to filesystem:",
+          convexError
+        );
+      }
+    }
+
+    await deleteReferenceImage(sourceKey, filename);
+    return NextResponse.json({
+      success: true,
+      message: "Image deleted successfully",
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to delete image";
+    console.error("Failed to delete reference image:", error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

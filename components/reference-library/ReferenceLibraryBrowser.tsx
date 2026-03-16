@@ -10,6 +10,7 @@ import { ReferenceLibraryFilters } from "@/components/reference-library/Referenc
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  deleteGeneratedImageFromLibrary,
   loadGeneratedImageLibrary,
   saveGeneratedImagesToLibrary,
   GENERATED_IMAGE_LIBRARY_UPDATED_EVENT,
@@ -180,6 +181,43 @@ export function ReferenceLibraryBrowser({
       onImagesSelected(selected);
     }
   };
+
+  const handleDeleteImage = useCallback(async (image: ReferenceImage) => {
+    try {
+      if (image.librarySource === "generated") {
+        const deleted = deleteGeneratedImageFromLibrary(image.id);
+        if (!deleted) {
+          throw new Error("Image not found in generated library");
+        }
+        setGeneratedImages((current) => current.filter((item) => item.id !== image.id));
+      } else {
+        const deletePath =
+          image.sourceKey === "original" || image.sourceKey === "improved"
+            ? `/api/reference-images/source/${image.sourceKey}/${encodeURIComponent(image.filename)}`
+            : `/api/reference-images/${encodeURIComponent(image.filename)}`;
+
+        const response = await fetch(deletePath, { method: "DELETE" });
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error(data?.error || "Failed to delete image");
+        }
+
+        setReferenceImages((current) => current.filter((item) => item.id !== image.id));
+      }
+
+      setSelectedImages((current) => {
+        const next = new Set(current);
+        next.delete(image.id);
+        return next;
+      });
+
+      toast.success(`Deleted ${image.filename}`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Failed to delete image";
+      toast.error(msg);
+      throw error;
+    }
+  }, []);
 
   const handleRecoverFromPosts = useCallback(() => {
     if (!rawPosts) return;
@@ -371,6 +409,7 @@ export function ReferenceLibraryBrowser({
                 <ReferenceImageCard
                   key={image.id}
                   image={image}
+                  onDelete={handleDeleteImage}
                   onSelect={handleImageSelect}
                   selectable={defaultSelectionMode}
                   selected={selectedImages.has(image.id)}

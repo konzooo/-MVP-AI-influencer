@@ -1,6 +1,6 @@
 import "server-only";
 
-import { access, mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
+import { access, mkdir, readdir, readFile, rm, stat, writeFile } from "fs/promises";
 import { extname, join } from "path";
 import sharp from "sharp";
 import type {
@@ -548,6 +548,23 @@ ${JSON.stringify(normalizedMetadata, null, 2)}
 `;
 
   await writeFile(textFilePath, textContent, "utf-8");
+}
+
+export async function deleteReferenceImage(
+  sourceKey: ReferenceLibrarySourceKey,
+  filename: string
+): Promise<void> {
+  const source = getReferenceImageSourceConfig(sourceKey);
+  const baseName = filename.replace(/\.(png|jpg|jpeg|webp)$/i, "");
+  const imagePath = join(source.path, filename);
+  const textFilePath = join(source.path, `${baseName}.txt`);
+
+  await access(imagePath);
+
+  await rm(imagePath, { force: true });
+  await rm(textFilePath, { force: true });
+  await rm(getVariantCachePath(source, filename, "reference"), { force: true });
+  await rm(getVariantCachePath(source, filename, "thumbnail"), { force: true });
 }
 
 export function parseReferenceImageDataUri(

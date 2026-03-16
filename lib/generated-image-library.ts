@@ -159,6 +159,24 @@ export function saveGeneratedImagesToLibrary(
   dispatchGeneratedImageLibraryUpdated();
 }
 
+export function deleteGeneratedImageFromLibrary(imageId: string): boolean {
+  if (typeof window === "undefined") return false;
+
+  const existing = loadGeneratedImageLibraryEntries();
+  const nextEntries = existing.filter((entry) => entry.id !== imageId);
+
+  if (nextEntries.length === existing.length) {
+    return false;
+  }
+
+  window.localStorage.setItem(
+    GENERATED_IMAGE_LIBRARY_KEY,
+    JSON.stringify(nextEntries)
+  );
+  dispatchGeneratedImageLibraryUpdated();
+  return true;
+}
+
 export function isGeneratedImageLibraryStorageEvent(event: StorageEvent): boolean {
   return event.key === GENERATED_IMAGE_LIBRARY_KEY;
 }
