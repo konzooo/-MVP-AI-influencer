@@ -2562,7 +2562,19 @@ export function PostViewModal({
               </>
             )}
 
-            {/* ── Section: Published Info ───────────────────────────── */}
+            {/* ── Section: Published Preview + Info ─────────────────── */}
+            {isPosted && (
+              <>
+                <Separator className="bg-zinc-800" />
+                <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">
+                  <InstagramPreview
+                    post={post}
+                    account={instagram.account}
+                  />
+                </div>
+              </>
+            )}
+
             {isPosted && post.publishingInfo && (
               <>
                 <Separator className="bg-zinc-800" />
