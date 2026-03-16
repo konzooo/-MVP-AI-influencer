@@ -211,6 +211,20 @@ function getFilledImageForPrompt(post: PostPlan, promptIdx: number) {
   );
 }
 
+function isOwnImageCarouselSeedSlide(post: PostPlan, promptIdx: number): boolean {
+  if (
+    post.creationMode !== "from_own_images" ||
+    post.postType !== "carousel" ||
+    promptIdx !== 0
+  ) {
+    return false;
+  }
+
+  const prompt = post.imagePrompts[promptIdx];
+  const filledImage = getFilledImageForPrompt(post, promptIdx);
+  return Boolean(filledImage?.userProvided) && !(prompt?.prompt ?? "").trim();
+}
+
 function getInternalApiBaseUrl(): string {
   if (typeof window !== "undefined") {
     return window.location.origin;
@@ -278,7 +292,7 @@ export async function generatePostImages(
 
   try {
     post.status = "generating";
-    savePostState(post);
+    await savePostState(post);
 
     // Resolve character references — use stored refs if available, otherwise select fresh
     // For own-image posts: skip character ref entirely — slide 1 (user's photo) is the reference
@@ -330,7 +344,7 @@ export async function generatePostImages(
       post.selectedCharacterRefId = charRef.id;
       post.selectedCharacterRefPath = charRef.referencePath;
       post.characterRefs = charRefPaths;
-      savePostState(post);
+      await savePostState(post);
 
       log.add(`Selected character reference: ${charRef.id}`);
     }
@@ -364,7 +378,7 @@ export async function generatePostImages(
         result.error = "Generation stopped by user";
         log.add("Generation stopped by user");
         post.status = "draft";
-        savePostState(post);
+        await savePostState(post);
         return result;
       }
 
@@ -386,7 +400,7 @@ export async function generatePostImages(
       if (!limit.allowed) {
         result.error = `Daily generation limit exceeded (${limit.dailySpend}€ / ${limit.dailyStopLimit}€)`;
         log.add(`ERROR: ${result.error}`);
-        savePostState(post);
+        await savePostState(post);
         return result;
       }
 
@@ -488,14 +502,14 @@ export async function generatePostImages(
         await resolveRecordGeneration();
 
         // Save after each image so the UI can poll progress
-        savePostState(post);
+        await savePostState(post);
       } catch (err) {
         // If aborted, stop immediately and reset to draft
         if (err instanceof DOMException && err.name === "AbortError") {
           result.error = "Generation stopped by user";
           log.add("Generation stopped by user");
           post.status = "draft";
-          savePostState(post);
+          await savePostState(post);
           return result;
         }
         log.add(
@@ -504,18 +518,21 @@ export async function generatePostImages(
       }
     }
 
-    const filledPromptCount = post.imagePrompts.reduce((count, _, promptIdx) => {
+    const requiredPromptIndexes = post.imagePrompts
+      .map((_, promptIdx) => promptIdx)
+      .filter((promptIdx) => !isOwnImageCarouselSeedSlide(post, promptIdx));
+    const filledRequiredPromptCount = requiredPromptIndexes.reduce((count, promptIdx) => {
       return count + (getFilledImageForPrompt(post, promptIdx) ? 1 : 0);
     }, 0);
     const generatedCount = post.generatedImages.filter((g) => !g.userProvided).length;
 
-    if (filledPromptCount < post.imagePrompts.length) {
+    if (filledRequiredPromptCount < requiredPromptIndexes.length) {
       // Partial completion (e.g. timeout): keep "generating" so the advancer
       // can resume on the next tick. Only reset to "draft" on complete failure.
-      if (filledPromptCount > 0) {
+      if (filledRequiredPromptCount > 0) {
         post.status = "generating";
         await savePostState(post);
-        result.error = `Generation incomplete — ${filledPromptCount}/${post.imagePrompts.length} slides done (will resume)`;
+        result.error = `Generation incomplete — ${filledRequiredPromptCount}/${requiredPromptIndexes.length} slides done (will resume)`;
         log.add(`PARTIAL: ${result.error}`);
       } else {
         post.status = "draft";
@@ -542,7 +559,7 @@ export async function generatePostImages(
       result.error = "Generation stopped by user";
       log.add("Generation stopped by user");
       post.status = "draft";
-      savePostState(post);
+      await savePostState(post);
       return result;
     }
     const msg = err instanceof Error ? err.message : "Unknown error";
