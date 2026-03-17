@@ -489,6 +489,8 @@ function EmojiPickerButton({
       <PopoverContent
         align={align}
         side={side}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
         className="w-[26rem] border-zinc-800 bg-zinc-950 p-2"
       >
         <div className="space-y-2">
@@ -502,6 +504,7 @@ function EmojiPickerButton({
               <button
                 key={category.id}
                 type="button"
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => setActiveCategory(category.id)}
                 className={`rounded-full px-2 py-1 text-[10px] transition-colors ${
                   category.id === currentCategory.id
