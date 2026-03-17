@@ -3,7 +3,6 @@ import { loadPostsAsync, savePostAsync } from "@/lib/store-server";
 import { loadTasksAsync } from "@/lib/task-store";
 import { generatePostImages } from "@/lib/task-runner";
 import { canPublishAsync, recordPublishAsync } from "@/lib/instagram-rate-limit";
-import { PostPlan } from "@/lib/types";
 import { FromScratchInspirationItem } from "@/lib/task-types";
 
 export const maxDuration = 60;
@@ -60,6 +59,7 @@ export async function POST(request: Request) {
     const candidates = posts.filter((post) => {
       if (!post.autoAdvance) return false;
       if (!ADVANCEABLE_STATUSES[post.status]) return false;
+      if (post.status === "draft" && post.generationError) return false;
 
       // For "ready" posts: don't retry more than once per 2 minutes
       if (post.status === "ready") {

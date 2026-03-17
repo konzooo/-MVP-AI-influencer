@@ -289,9 +289,20 @@ export async function generatePostImages(
 ): Promise<GeneratePostResult> {
   const log = createLog();
   const result: GeneratePostResult = { success: false, error: null, log: log.lines };
+  let lastPromptFailure: string | null = null;
+
+  const failGeneration = async (message: string): Promise<GeneratePostResult> => {
+    result.error = message;
+    post.status = "draft";
+    post.generationError = message;
+    log.add(`ERROR: ${message}`);
+    await savePostState(post);
+    return result;
+  };
 
   try {
     post.status = "generating";
+    post.generationError = undefined;
     await savePostState(post);
 
     // Resolve character references — use stored refs if available, otherwise select fresh
@@ -313,17 +324,13 @@ export async function generatePostImages(
       log.add(`No stored ref — fetching reference library...`);
       const refsRes = await fetch(getInternalApiUrl("/api/reference-images"));
       if (!refsRes.ok) {
-        result.error = "Could not fetch reference library";
-        log.add(`ERROR: ${result.error}`);
-        return result;
+        return failGeneration("Could not fetch reference library");
       }
 
       const refsData = await refsRes.json();
       const refs: ReferenceImage[] = refsData.images || [];
       if (refs.length === 0) {
-        result.error = "No character references in library";
-        log.add(`ERROR: ${result.error}`);
-        return result;
+        return failGeneration("No character references in library");
       }
 
       let refContext = buildContextFromStyleMode(post.title);
@@ -333,9 +340,7 @@ export async function generatePostImages(
 
       const charRef = selectCharacterReference(refs, refContext);
       if (!charRef) {
-        result.error = "Failed to select character reference";
-        log.add(`ERROR: ${result.error}`);
-        return result;
+        return failGeneration("Failed to select character reference");
       }
 
       charRefPaths = [{ id: charRef.id, path: charRef.referencePath }];
@@ -363,9 +368,9 @@ export async function generatePostImages(
         charRefUrls.push(uploadedUrl);
         log.add(`Character reference uploaded: ${uploadedUrl.slice(0, 60)}...`);
       } catch (err) {
-        result.error = `Failed to upload character reference ${ref.id}: ${err instanceof Error ? err.message : "Unknown error"}`;
-        log.add(`ERROR: ${result.error}`);
-        return result;
+        return failGeneration(
+          `Failed to upload character reference ${ref.id}: ${err instanceof Error ? err.message : "Unknown error"}`
+        );
       }
     }
 
@@ -378,6 +383,7 @@ export async function generatePostImages(
         result.error = "Generation stopped by user";
         log.add("Generation stopped by user");
         post.status = "draft";
+        post.generationError = undefined;
         await savePostState(post);
         return result;
       }
@@ -398,10 +404,9 @@ export async function generatePostImages(
       // Check cost limit before generation
       const limit = await resolveCheckDailyLimit();
       if (!limit.allowed) {
-        result.error = `Daily generation limit exceeded (${limit.dailySpend}€ / ${limit.dailyStopLimit}€)`;
-        log.add(`ERROR: ${result.error}`);
-        await savePostState(post);
-        return result;
+        return failGeneration(
+          `Daily generation limit exceeded (${limit.dailySpend}€ / ${limit.dailyStopLimit}€)`
+        );
       }
 
       // Prepare reference URLs for this prompt
@@ -464,12 +469,14 @@ export async function generatePostImages(
 
         if (!generateRes.ok) {
           const err = await readApiError(generateRes);
+          lastPromptFailure = err;
           log.add(`WARNING: Generation failed for prompt ${promptIdx}: ${err}`);
           continue;
         }
 
         const genResult = await generateRes.json();
         if (!genResult.images || genResult.images.length === 0) {
+          lastPromptFailure = "No images returned from generator";
           log.add(`WARNING: No images returned for prompt ${promptIdx}`);
           continue;
         }
@@ -509,11 +516,13 @@ export async function generatePostImages(
           result.error = "Generation stopped by user";
           log.add("Generation stopped by user");
           post.status = "draft";
+          post.generationError = undefined;
           await savePostState(post);
           return result;
         }
+        lastPromptFailure = err instanceof Error ? err.message : "Unknown error";
         log.add(
-          `ERROR generating prompt ${promptIdx}: ${err instanceof Error ? err.message : "Unknown error"}`
+          `ERROR generating prompt ${promptIdx}: ${lastPromptFailure}`
         );
       }
     }
@@ -531,19 +540,22 @@ export async function generatePostImages(
       // can resume on the next tick. Only reset to "draft" on complete failure.
       if (filledRequiredPromptCount > 0) {
         post.status = "generating";
+        post.generationError = undefined;
         await savePostState(post);
         result.error = `Generation incomplete — ${filledRequiredPromptCount}/${requiredPromptIndexes.length} slides done (will resume)`;
         log.add(`PARTIAL: ${result.error}`);
       } else {
-        post.status = "draft";
-        await savePostState(post);
-        result.error = `Generation failed — no images produced`;
-        log.add(`ERROR: ${result.error}`);
+        return failGeneration(
+          lastPromptFailure
+            ? `Generation failed — ${lastPromptFailure}`
+            : "Generation failed — no images produced"
+        );
       }
       return result;
     }
 
     post.status = "ready";
+    post.generationError = undefined;
     await savePostState(post);
     log.add(
       generatedCount > 0
@@ -559,13 +571,13 @@ export async function generatePostImages(
       result.error = "Generation stopped by user";
       log.add("Generation stopped by user");
       post.status = "draft";
+      post.generationError = undefined;
       await savePostState(post);
       return result;
     }
     const msg = err instanceof Error ? err.message : "Unknown error";
-    result.error = msg;
     log.add(`EXCEPTION: ${msg}`);
-    return result;
+    return failGeneration(msg);
   }
 }
 

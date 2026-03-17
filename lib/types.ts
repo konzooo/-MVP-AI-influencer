@@ -90,6 +90,7 @@ export interface PostPlan {
   // Image Generation output
   generatedImages: GeneratedImage[];
   generationHistory: GenerationAttempt[];
+  generationError?: string;
 
   // Instagram publishing
   publishingInfo?: PublishingInfo;

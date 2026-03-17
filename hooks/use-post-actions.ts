@@ -31,6 +31,7 @@ export function usePostActions() {
       const approved: PostPlan = {
         ...post,
         status: "approved",
+        generationError: undefined,
         updatedAt: new Date().toISOString(),
       };
       savePost(approved);
