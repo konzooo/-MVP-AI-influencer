@@ -59,7 +59,11 @@ export async function POST(request: Request) {
     const candidates = posts.filter((post) => {
       if (!post.autoAdvance) return false;
       if (!ADVANCEABLE_STATUSES[post.status]) return false;
-      if (post.status === "draft" && post.generationError) return false;
+      if (post.status === "draft" && post.generationError) {
+        if ((post.generationRetryCount || 0) >= 3) return false;
+        const age = now - new Date(post.updatedAt).getTime();
+        if (age < 5 * 60 * 1000) return false;
+      }
 
       // For "ready" posts: don't retry more than once per 2 minutes
       if (post.status === "ready") {
@@ -86,6 +90,9 @@ export async function POST(request: Request) {
 
     // --- GENERATE ---
     if (post.status === "draft" || post.status === "approved" || post.status === "generating") {
+      if (post.generationError) {
+        addLog(`Retrying generation (attempt ${(post.generationRetryCount || 0) + 1}/3, previous error: ${post.generationError})`);
+      }
       post.status = "approved";
 
       // Load task for imageSize + styleModeHint

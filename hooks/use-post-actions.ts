@@ -32,6 +32,7 @@ export function usePostActions() {
         ...post,
         status: "approved",
         generationError: undefined,
+        generationRetryCount: 0,
         updatedAt: new Date().toISOString(),
       };
       savePost(approved);

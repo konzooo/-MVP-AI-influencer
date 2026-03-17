@@ -36,7 +36,7 @@ export async function generateWithSeedream(
           num_images: req.numImages || 1,
           max_images: req.maxImages || 1,
           ...(req.seed ? { seed: req.seed } : {}),
-          enable_safety_checker: req.enableSafetyChecker ?? true,
+          enable_safety_checker: req.enableSafetyChecker ?? false,
         },
         logs: true,
       }

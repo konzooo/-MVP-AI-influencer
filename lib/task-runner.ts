@@ -295,7 +295,8 @@ export async function generatePostImages(
     result.error = message;
     post.status = "draft";
     post.generationError = message;
-    log.add(`ERROR: ${message}`);
+    post.generationRetryCount = (post.generationRetryCount || 0) + 1;
+    log.add(`ERROR: ${message} (attempt ${post.generationRetryCount}/3)`);
     await savePostState(post);
     return result;
   };
