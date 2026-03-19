@@ -52,6 +52,15 @@ const INSTAGRAM_AUTH_ERROR_PATTERNS = [
   "permissions error",
 ];
 
+function getPublicAppBaseUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    "http://localhost:3000"
+  );
+}
+
 // ─── Token Storage ──────────────────────────────────────────────────────────
 
 export async function loadAuth(): Promise<InstagramAuth | null> {
@@ -453,7 +462,12 @@ export async function optimizeImageIfNeeded(imageUrl: string): Promise<string> {
     preparedContentType,
     preparedContentLength,
   });
-  return url;
+  const instagramFetchUrl = new URL(
+    "/api/instagram/publish-image",
+    getPublicAppBaseUrl()
+  );
+  instagramFetchUrl.searchParams.set("src", url);
+  return instagramFetchUrl.toString();
 }
 
 // ─── Container Management ───────────────────────────────────────────────────
