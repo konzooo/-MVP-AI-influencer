@@ -9,13 +9,6 @@ import { ReferenceImageCard } from "@/components/reference-library/ReferenceImag
 import { ReferenceLibraryFilters } from "@/components/reference-library/ReferenceLibraryFilters";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  deleteGeneratedImageFromLibrary,
-  loadGeneratedImageLibrary,
-  saveGeneratedImagesToLibrary,
-  GENERATED_IMAGE_LIBRARY_UPDATED_EVENT,
-  isGeneratedImageLibraryStorageEvent,
-} from "@/lib/generated-image-library";
 import { Images, Loader2, AlertCircle, Sparkles, RefreshCw } from "lucide-react";
 import type { PostPlan, ReferenceImage, ReferenceLibraryFilters as FiltersType } from "@/lib/types";
 
@@ -76,37 +69,26 @@ export function ReferenceLibraryBrowser({
     }
   }, []);
 
-  const loadGeneratedImages = useCallback(() => {
-    setGeneratedImages(loadGeneratedImageLibrary());
+  const loadGeneratedImages = useCallback(async () => {
+    try {
+      const response = await fetch("/api/generated-images");
+      if (!response.ok) {
+        throw new Error("Failed to load generated images");
+      }
+
+      const data = await response.json();
+      setGeneratedImages(data.images || []);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to load generated images";
+      toast.error(msg);
+    }
   }, []);
 
   // Load images on mount
   useEffect(() => {
     loadReferenceImages();
-    loadGeneratedImages();
+    void loadGeneratedImages();
   }, [loadGeneratedImages, loadReferenceImages]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-
-    const handleGeneratedLibraryUpdate = () => {
-      loadGeneratedImages();
-    };
-
-    const handleStorage = (event: StorageEvent) => {
-      if (isGeneratedImageLibraryStorageEvent(event)) {
-        loadGeneratedImages();
-      }
-    };
-
-    window.addEventListener(GENERATED_IMAGE_LIBRARY_UPDATED_EVENT, handleGeneratedLibraryUpdate);
-    window.addEventListener("storage", handleStorage);
-
-    return () => {
-      window.removeEventListener(GENERATED_IMAGE_LIBRARY_UPDATED_EVENT, handleGeneratedLibraryUpdate);
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, [loadGeneratedImages]);
 
   const images = activeTab === "reference" ? referenceImages : generatedImages;
   const hasMetadataFilters = activeTab === "reference";
@@ -185,9 +167,12 @@ export function ReferenceLibraryBrowser({
   const handleDeleteImage = useCallback(async (image: ReferenceImage) => {
     try {
       if (image.librarySource === "generated") {
-        const deleted = deleteGeneratedImageFromLibrary(image.id);
-        if (!deleted) {
-          throw new Error("Image not found in generated library");
+        const response = await fetch(`/api/generated-images/${encodeURIComponent(image.id)}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error(data?.error || "Failed to delete image");
         }
         setGeneratedImages((current) => current.filter((item) => item.id !== image.id));
       } else {
@@ -219,7 +204,7 @@ export function ReferenceLibraryBrowser({
     }
   }, []);
 
-  const handleRecoverFromPosts = useCallback(() => {
+  const handleRecoverFromPosts = useCallback(async () => {
     if (!rawPosts) return;
     setRecovering(true);
     try {
@@ -233,11 +218,30 @@ export function ReferenceLibraryBrowser({
       for (const post of posts) {
         const images = post.generatedImages?.filter((img) => img.url && !img.userProvided);
         if (images?.length) {
-          saveGeneratedImagesToLibrary(images, { postId: post.id, postTitle: post.title });
-          totalSaved += images.length;
+          const response = await fetch("/api/generated-images", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              images: images.map((img) => ({
+                imageId: img.id,
+                falUrl: img.sourceUrl || img.url,
+                prompt: img.prompt,
+                postId: post.id,
+                postTitle: post.title,
+                promptIndex: img.promptIndex,
+                createdAt: img.createdAt,
+              })),
+            }),
+          });
+          if (!response.ok) {
+            const data = await response.json().catch(() => null);
+            throw new Error(data?.error || "Failed to recover generated images");
+          }
+          const data = await response.json();
+          totalSaved += data.imported || 0;
         }
       }
-      loadGeneratedImages();
+      await loadGeneratedImages();
       toast.success(`Recovered ${totalSaved} image${totalSaved !== 1 ? "s" : ""} from ${posts.length} posts`);
     } catch (err) {
       toast.error("Recovery failed: " + (err instanceof Error ? err.message : "Unknown error"));

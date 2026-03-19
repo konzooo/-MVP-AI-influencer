@@ -464,6 +464,9 @@ export async function generatePostImages(
             imageSize: options.imageSize,
             numImages: 1,
             maxImages: 1,
+            postId: post.id,
+            postTitle: post.title,
+            promptIndex: promptIdx,
           }),
           signal: options.signal,
         });
@@ -484,12 +487,14 @@ export async function generatePostImages(
 
         const img = genResult.images[0];
         const generatedImage = {
-          id: `gen-${Date.now()}-${promptIdx}`,
+          id: img.id || `gen-${Date.now()}-${promptIdx}`,
           url: img.url,
+          storageId: img.storageId,
+          sourceUrl: img.sourceUrl,
           prompt: prompt.prompt,
           seed: img.seed,
           selected: true,
-          createdAt: new Date().toISOString(),
+          createdAt: img.createdAt || new Date().toISOString(),
           promptIndex: promptIdx,
           settings: {
             imageSize: options.imageSize,

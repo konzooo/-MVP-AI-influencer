@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateWithSeedream } from "@/lib/fal";
+import { persistGeneratedImageFromFal } from "@/lib/generated-image-storage";
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,6 +21,9 @@ export async function POST(request: NextRequest) {
       maxImages,
       seed,
       enableSafetyChecker,
+      postId,
+      postTitle,
+      promptIndex,
     } = body;
 
     if (!prompt) {
@@ -49,7 +53,37 @@ export async function POST(request: NextRequest) {
       apiKey
     );
 
-    return NextResponse.json(result);
+    const createdAt = new Date().toISOString();
+    const persistedImages = await Promise.all(
+      (result.images || []).map(async (img: { url: string; width?: number; height?: number; content_type?: string }, index: number) => {
+        const imageId = crypto.randomUUID();
+        const persisted = await persistGeneratedImageFromFal({
+          imageId,
+          falUrl: img.url,
+          prompt,
+          postId,
+          postTitle,
+          promptIndex:
+            typeof promptIndex === "number" ? promptIndex : undefined,
+          createdAt,
+        });
+
+        return {
+          ...img,
+          id: imageId,
+          url: persisted.url,
+          storageId: persisted.storageId,
+          sourceUrl: persisted.sourceUrl,
+          createdAt,
+          order: index,
+        };
+      })
+    );
+
+    return NextResponse.json({
+      ...result,
+      images: persistedImages,
+    });
   } catch (error) {
     console.error("Generate error:", error);
     return NextResponse.json(

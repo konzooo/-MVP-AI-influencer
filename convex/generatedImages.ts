@@ -14,6 +14,16 @@ export const list = query({
   },
 });
 
+export const get = query({
+  args: { imageId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("generatedImages")
+      .withIndex("by_imageId", (q) => q.eq("imageId", args.imageId))
+      .unique();
+  },
+});
+
 export const add = mutation({
   args: {
     imageId: v.string(),

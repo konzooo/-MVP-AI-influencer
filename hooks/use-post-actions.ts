@@ -8,7 +8,6 @@ import { generatePostImages } from "@/lib/task-runner";
 import { checkDailyLimit, recordGeneration } from "@/lib/cost-tracker";
 import { canPublish, recordPublish } from "@/lib/instagram-rate-limit";
 import { Task } from "@/lib/task-types";
-import { saveGeneratedImagesToLibrary } from "@/lib/generated-image-library";
 
 export function usePostActions() {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -244,6 +243,9 @@ export function usePostActions() {
                 ? parseInt(settings.seed) + v
                 : undefined,
               enableSafetyChecker: settings?.enableSafetyChecker ?? true,
+              postId: post.id,
+              postTitle: post.title,
+              promptIndex: slideIndex,
             }),
           });
 
@@ -258,8 +260,10 @@ export function usePostActions() {
                 img.seed ||
                 (settings?.seed ? parseInt(settings.seed) + v : undefined);
               allNewImages.push({
-                id: crypto.randomUUID(),
+                id: img.id || crypto.randomUUID(),
                 url: img.url,
+                storageId: img.storageId,
+                sourceUrl: img.sourceUrl,
                 prompt: promptData.prompt,
                 seed: actualSeed,
                 settings: {
@@ -288,10 +292,6 @@ export function usePostActions() {
           generatedImages: [...allNewImages, ...updatedExisting],
         };
         savePost(updatedPost);
-        saveGeneratedImagesToLibrary(allNewImages, {
-          postId: post.id,
-          postTitle: post.title,
-        });
 
         toast.success(
           `Generated ${allNewImages.length} image${allNewImages.length > 1 ? "s" : ""}`

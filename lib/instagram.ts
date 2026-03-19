@@ -1,5 +1,6 @@
 import { getConvexClient } from "./convex-client";
 import { api } from "@/convex/_generated/api";
+import { getPublicAppBaseUrl } from "./app-url";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -51,15 +52,6 @@ const INSTAGRAM_AUTH_ERROR_PATTERNS = [
   "access token could not be decrypted",
   "permissions error",
 ];
-
-function getPublicAppBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.APP_URL ||
-    process.env.NEXT_PUBLIC_BASE_URL ||
-    "http://localhost:3000"
-  );
-}
 
 // ─── Token Storage ──────────────────────────────────────────────────────────
 
@@ -393,6 +385,16 @@ export async function verifyImageUrl(url: string): Promise<boolean> {
  * This avoids passing through source URLs with unsupported formats/content-types.
  */
 export async function optimizeImageIfNeeded(imageUrl: string): Promise<string> {
+  try {
+    const candidate = new URL(imageUrl, getPublicAppBaseUrl());
+    if (candidate.pathname.startsWith("/api/generated-images/")) {
+      candidate.searchParams.set("variant", "publish");
+      return candidate.toString();
+    }
+  } catch {
+    // Fall through to legacy normalization path.
+  }
+
   const res = await fetch(imageUrl);
   if (!res.ok) {
     throw new Error(`Failed to download image: ${res.status}`);

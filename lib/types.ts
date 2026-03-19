@@ -36,6 +36,8 @@ export type ReferenceImageSourceKey =
 export interface GeneratedImage {
   id: string;
   url: string;
+  storageId?: string;
+  sourceUrl?: string;
   prompt: string;
   seed?: number;
   settings: GenerationSettings;

@@ -44,7 +44,6 @@ import {
 } from "@/components/image-generation/GenerationControls";
 import { ImageDropZone } from "@/components/ui/ImageDropZone";
 import { ReferenceLibraryDialog } from "@/components/reference-library/ReferenceLibraryDialog";
-import { loadGeneratedImageLibrary } from "@/lib/generated-image-library";
 import { POSTS_UPDATED_EVENT } from "@/lib/post-events";
 import {
   ChevronDown,
@@ -689,7 +688,6 @@ export function PostViewModal({
     }
 
     setRefLoading(true);
-    const generatedRefs = loadGeneratedImageLibrary();
 
     const resolveStoredRefs = (allRefs: ReferenceImage[]) => {
       if (post.characterRefs && post.characterRefs.length > 0) {
@@ -741,9 +739,12 @@ export function PostViewModal({
       return null;
     };
 
-    fetch("/api/reference-images")
-      .then((res) => res.json())
-      .then((data) => {
+    Promise.all([
+      fetch("/api/generated-images").then((res) => res.json()),
+      fetch("/api/reference-images").then((res) => res.json()),
+    ])
+      .then(([generatedData, data]) => {
+        const generatedRefs: ReferenceImage[] = generatedData.images || [];
         const refs: ReferenceImage[] = data.images || [];
         const allRefs = [...generatedRefs, ...refs];
 
@@ -801,8 +802,7 @@ export function PostViewModal({
         }
       })
       .catch(() => {
-        const storedRefs = resolveStoredRefs(generatedRefs);
-        setSelectedRefs(storedRefs || []);
+        setSelectedRefs([]);
       })
       .finally(() => setRefLoading(false));
   }, [open, post?.id, post?.selectedCharacterRefId]);
