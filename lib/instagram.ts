@@ -420,11 +420,38 @@ export async function optimizeImageIfNeeded(imageUrl: string): Promise<string> {
 
   const base64 = `data:image/jpeg;base64,${optimized.toString("base64")}`;
   const url = await uploadToFalStorage(base64, apiKey);
+  if (url.startsWith("data:")) {
+    throw new Error(
+      "Prepared image upload failed, so Instagram received no public image URL"
+    );
+  }
+
+  let preparedContentType = "unknown";
+  let preparedContentLength = "unknown";
+  try {
+    const preparedRes = await fetch(url, { method: "HEAD" });
+    preparedContentType =
+      preparedRes.headers.get("content-type") || preparedContentType;
+    preparedContentLength =
+      preparedRes.headers.get("content-length") || preparedContentLength;
+  } catch {
+    // Best-effort diagnostics only
+  }
+
   console.log("[Instagram] Normalized image for publish", {
     sourceUrl: imageUrl,
     sourceContentType: contentType || "unknown",
     originalBytes: buffer.length,
     normalizedBytes: optimized.length,
+    preparedUrlHost: (() => {
+      try {
+        return new URL(url).host;
+      } catch {
+        return "invalid";
+      }
+    })(),
+    preparedContentType,
+    preparedContentLength,
   });
   return url;
 }
