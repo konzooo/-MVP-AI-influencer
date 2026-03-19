@@ -475,7 +475,23 @@ async function createMediaContainer(
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
     const message = err?.error?.message || res.statusText;
-    throw new Error(`Failed to create container: ${message}`);
+    const imageHost = params.image_url
+      ? (() => {
+          try {
+            return new URL(params.image_url).host;
+          } catch {
+            return "invalid";
+          }
+        })()
+      : undefined;
+    const mediaDetails = [
+      params.media_type || "IMAGE",
+      params.is_carousel_item === "true" ? "carousel_item" : undefined,
+      imageHost ? `host=${imageHost}` : undefined,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    throw new Error(`Failed to create container (${mediaDetails}): ${message}`);
   }
 
   const data = await res.json();
@@ -636,14 +652,24 @@ export async function publishCarousel(params: {
     );
 
     // Create child containers in parallel
-    const childContainerIds = await Promise.all(
-      optimizedUrls.map((url) =>
-        createMediaContainer(auth.igUserId, auth.accessToken, {
+    const childContainerIds: string[] = [];
+    for (const [index, url] of optimizedUrls.entries()) {
+      try {
+        const childId = await createMediaContainer(auth.igUserId, auth.accessToken, {
           image_url: url,
           is_carousel_item: "true",
-        })
-      )
-    );
+        });
+        childContainerIds.push(childId);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        return {
+          success: false,
+          error: `Carousel image ${index + 1} failed: ${message}`,
+          retryable: true,
+        };
+      }
+    }
 
     // Poll all child containers
     for (const childId of childContainerIds) {
