@@ -167,10 +167,23 @@ export async function POST(request: Request) {
 
       if (!publishRes.ok) {
         const err = await publishRes.json();
-        addLog(`Publish failed: ${err.error}`);
-        // Touch updatedAt so we don't retry immediately
-        await savePostAsync(post);
-        return NextResponse.json({ advanced: false, action: "publish_failed", error: err.error, log });
+        const errorMessage = err.error || "Publishing failed";
+        addLog(`Publish failed: ${errorMessage}`);
+        await savePostAsync({
+          ...post,
+          status: "ready",
+          publishingInfo: {
+            ...post.publishingInfo,
+            status: "failed",
+            error: errorMessage,
+          },
+        });
+        return NextResponse.json({
+          advanced: false,
+          action: "publish_failed",
+          error: errorMessage,
+          log,
+        });
       }
 
       const published = await publishRes.json();

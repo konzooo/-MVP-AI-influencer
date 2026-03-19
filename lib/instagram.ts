@@ -380,11 +380,10 @@ export async function verifyImageUrl(url: string): Promise<boolean> {
 }
 
 /**
- * Check image size and optimize if needed.
- * Returns the original URL if under limit, or a new URL after re-uploading optimized version.
+ * Normalize images to a public JPEG upload that Instagram reliably accepts.
+ * This avoids passing through source URLs with unsupported formats/content-types.
  */
 export async function optimizeImageIfNeeded(imageUrl: string): Promise<string> {
-  // Download the image to check size
   const res = await fetch(imageUrl);
   if (!res.ok) {
     throw new Error(`Failed to download image: ${res.status}`);
@@ -392,19 +391,20 @@ export async function optimizeImageIfNeeded(imageUrl: string): Promise<string> {
 
   const arrayBuffer = await res.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
 
-  if (buffer.length <= MAX_IMAGE_SIZE_BYTES) {
-    return imageUrl; // No optimization needed
-  }
-
-  // Need to compress — use sharp
+  // Always normalize and re-upload so Instagram receives a direct JPEG asset.
   const sharp = (await import("sharp")).default;
   let quality = 90;
-  let optimized: Buffer = await sharp(buffer).jpeg({ quality }).toBuffer();
+  let optimized: Buffer = await sharp(buffer)
+    .jpeg({ quality, mozjpeg: true })
+    .toBuffer();
 
   while (optimized.length > MAX_IMAGE_SIZE_BYTES && quality >= 50) {
     quality -= 10;
-    optimized = await sharp(buffer).jpeg({ quality }).toBuffer();
+    optimized = await sharp(buffer)
+      .jpeg({ quality, mozjpeg: true })
+      .toBuffer();
   }
 
   if (optimized.length > MAX_IMAGE_SIZE_BYTES) {
@@ -420,6 +420,12 @@ export async function optimizeImageIfNeeded(imageUrl: string): Promise<string> {
 
   const base64 = `data:image/jpeg;base64,${optimized.toString("base64")}`;
   const url = await uploadToFalStorage(base64, apiKey);
+  console.log("[Instagram] Normalized image for publish", {
+    sourceUrl: imageUrl,
+    sourceContentType: contentType || "unknown",
+    originalBytes: buffer.length,
+    normalizedBytes: optimized.length,
+  });
   return url;
 }
 

@@ -80,6 +80,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (!result.success) {
+      console.error("Instagram publish failed:", {
+        postType,
+        imageCount: imageUrls.length,
+        error: result.error,
+        retryable: result.retryable,
+      });
       return NextResponse.json(
         { error: result.error, retryable: result.retryable },
         { status: 422 }
