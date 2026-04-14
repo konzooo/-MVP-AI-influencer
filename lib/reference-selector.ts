@@ -8,6 +8,8 @@
 
 import { ReferenceImage } from "./types";
 
+const FACE_REFERENCE_TAG = "face_reference";
+
 export interface ReferenceMatchContext {
   styleMode?: string;           // e.g. "Beach / Coastal"
   location?: string;            // e.g. "Travel: Southeast Asia"
@@ -67,22 +69,34 @@ function scoreReference(ref: ReferenceImage, ctx: ReferenceMatchContext): number
   return score;
 }
 
+export function isFaceReference(ref: ReferenceImage): boolean {
+  return ref.tags.some((tag) => tag.toLowerCase() === FACE_REFERENCE_TAG);
+}
+
+export function getSelectableCharacterReferences(
+  references: ReferenceImage[]
+): ReferenceImage[] {
+  return references.filter(isFaceReference);
+}
+
 /**
  * Select the best character reference from the library for the given context
  *
  * Strategy:
- * 1. Score all references
- * 2. Among highest scorers (within 1 point), pick randomly to avoid staleness
- * 3. If all scores are 0, pick randomly from entire library
- * 4. If library is empty, return null
+ * 1. Only consider images tagged as face references
+ * 2. Score all eligible references
+ * 3. Among highest scorers (within 1 point), pick randomly to avoid staleness
+ * 4. If all scores are 0, pick randomly from eligible references
+ * 5. If no eligible references exist, return null
  */
 export function selectCharacterReference(
   references: ReferenceImage[],
   context: ReferenceMatchContext
 ): ReferenceImage | null {
-  if (references.length === 0) return null;
+  const eligibleReferences = getSelectableCharacterReferences(references);
+  if (eligibleReferences.length === 0) return null;
 
-  const scored = references.map((ref) => ({
+  const scored = eligibleReferences.map((ref) => ({
     ref,
     score: scoreReference(ref, context),
   }));
@@ -91,9 +105,9 @@ export function selectCharacterReference(
 
   const maxScore = scored[0].score;
 
-  // If all scores are 0, pick randomly from entire library
+  // If all scores are 0, pick randomly from eligible references
   if (maxScore === 0) {
-    return references[Math.floor(Math.random() * references.length)];
+    return eligibleReferences[Math.floor(Math.random() * eligibleReferences.length)];
   }
 
   // Among top scorers (within 1 point of max), pick randomly

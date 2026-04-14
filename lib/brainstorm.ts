@@ -4,7 +4,11 @@ import { PostPlan, CreationMode, PostType, createEmptyPost } from "./types";
 import { savePost } from "./store";
 import { loadIdentity, buildPersonaContext } from "./identity";
 import { loadAISettings, type AIProvider, type CarouselStyle } from "./ai-settings";
-import { selectCharacterReference, buildContextFromKeywords } from "./reference-selector";
+import {
+  selectCharacterReference,
+  buildContextFromKeywords,
+  getSelectableCharacterReferences,
+} from "./reference-selector";
 import { getLLMUsageFromHeaders, recordLLMCall } from "./cost-tracker";
 import type { ReferenceImage } from "./types";
 
@@ -100,17 +104,20 @@ export async function brainstormPost(params: {
       const refsRes = await fetch("/api/reference-images");
       if (refsRes.ok) {
         const { images: refs }: { images: ReferenceImage[] } = await refsRes.json();
-        if (refs.length > 0) {
+        const selectableRefs = getSelectableCharacterReferences(refs);
+        if (selectableRefs.length > 0) {
           const refContext = buildContextFromKeywords(
             [newPost.title, newPost.description, newPost.caption].filter(Boolean).join(" ")
           );
-          const charRef = selectCharacterReference(refs, refContext);
+          const charRef = selectCharacterReference(selectableRefs, refContext);
           if (charRef) {
             newPost.selectedCharacterRefId = charRef.id;
             newPost.selectedCharacterRefPath = charRef.referencePath;
             newPost.characterRefs = [{ id: charRef.id, path: charRef.referencePath }];
             console.log("[brainstormPost] Smart-selected character reference:", charRef.id);
           }
+        } else {
+          console.warn("[brainstormPost] No face_reference images available for auto-selection");
         }
       }
     } catch (err) {

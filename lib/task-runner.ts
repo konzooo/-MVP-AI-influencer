@@ -33,6 +33,7 @@ import {
   selectCharacterReference,
   buildContextFromStyleMode,
   buildContextFromKeywords,
+  getSelectableCharacterReferences,
 } from "./reference-selector";
 import {
   checkDailyLimit,
@@ -330,8 +331,9 @@ export async function generatePostImages(
 
       const refsData = await refsRes.json();
       const refs: ReferenceImage[] = refsData.images || [];
-      if (refs.length === 0) {
-        return failGeneration("No character references in library");
+      const selectableRefs = getSelectableCharacterReferences(refs);
+      if (selectableRefs.length === 0) {
+        return failGeneration("No face-reference images available in library");
       }
 
       let refContext = buildContextFromStyleMode(post.title);
@@ -339,9 +341,9 @@ export async function generatePostImages(
         refContext = buildContextFromStyleMode(options.styleModeHint);
       }
 
-      const charRef = selectCharacterReference(refs, refContext);
+      const charRef = selectCharacterReference(selectableRefs, refContext);
       if (!charRef) {
-        return failGeneration("Failed to select character reference");
+        return failGeneration("Failed to select a face-reference image");
       }
 
       charRefPaths = [{ id: charRef.id, path: charRef.referencePath }];
@@ -905,7 +907,8 @@ export async function runTask(
         if (refsRes.ok) {
           const refsData = await refsRes.json();
           const refs: ReferenceImage[] = refsData.images || [];
-          if (refs.length > 0) {
+          const selectableRefs = getSelectableCharacterReferences(refs);
+          if (selectableRefs.length > 0) {
             let refContext;
             if (selectedItem.type === "from_scratch") {
               const item = selectedItem as FromScratchInspirationItem;
@@ -915,13 +918,15 @@ export async function runTask(
             } else {
               refContext = buildContextFromKeywords([post.title, post.description, post.caption].filter(Boolean).join(" "));
             }
-            const charRef = selectCharacterReference(refs, refContext);
+            const charRef = selectCharacterReference(selectableRefs, refContext);
             if (charRef) {
               post.selectedCharacterRefId = charRef.id;
               post.selectedCharacterRefPath = charRef.referencePath;
               post.characterRefs = [{ id: charRef.id, path: charRef.referencePath }];
               log.add(`Character reference selected: ${charRef.id}`);
             }
+          } else {
+            log.add("WARNING: No face_reference images available for automatic selection");
           }
         }
       } catch (err) {
