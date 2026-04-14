@@ -371,9 +371,17 @@ export async function getAccountStatus(): Promise<InstagramAccount> {
 /**
  * Check if an image URL is accessible.
  */
+function resolvePublicImageUrl(url: string): string {
+  try {
+    return new URL(url, getPublicAppBaseUrl()).toString();
+  } catch {
+    return url;
+  }
+}
+
 export async function verifyImageUrl(url: string): Promise<boolean> {
   try {
-    const res = await fetch(url, { method: "HEAD" });
+    const res = await fetch(resolvePublicImageUrl(url), { method: "HEAD" });
     return res.ok;
   } catch {
     return false;
@@ -386,7 +394,7 @@ export async function verifyImageUrl(url: string): Promise<boolean> {
  */
 export async function optimizeImageIfNeeded(imageUrl: string): Promise<string> {
   try {
-    const candidate = new URL(imageUrl, getPublicAppBaseUrl());
+    const candidate = new URL(resolvePublicImageUrl(imageUrl));
     if (candidate.pathname.startsWith("/api/generated-images/")) {
       candidate.searchParams.set("variant", "publish");
       return candidate.toString();
@@ -395,7 +403,8 @@ export async function optimizeImageIfNeeded(imageUrl: string): Promise<string> {
     // Fall through to legacy normalization path.
   }
 
-  const res = await fetch(imageUrl);
+  const resolvedImageUrl = resolvePublicImageUrl(imageUrl);
+  const res = await fetch(resolvedImageUrl);
   if (!res.ok) {
     throw new Error(`Failed to download image: ${res.status}`);
   }
