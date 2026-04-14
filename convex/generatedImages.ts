@@ -17,10 +17,12 @@ export const list = query({
 export const get = query({
   args: { imageId: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const rows = await ctx.db
       .query("generatedImages")
       .withIndex("by_imageId", (q) => q.eq("imageId", args.imageId))
-      .unique();
+      .collect();
+
+    return rows[0] ?? null;
   },
 });
 
@@ -35,11 +37,11 @@ export const add = mutation({
     createdAt: v.string(),
   },
   handler: async (ctx, args) => {
-    // Check if already exists
-    const existing = await ctx.db
+    const existingRows = await ctx.db
       .query("generatedImages")
       .withIndex("by_imageId", (q) => q.eq("imageId", args.imageId))
-      .unique();
+      .collect();
+    const existing = existingRows[0];
 
     if (existing) {
       await ctx.db.patch(existing._id, {
@@ -65,10 +67,11 @@ export const add = mutation({
 export const remove = mutation({
   args: { imageId: v.string() },
   handler: async (ctx, args) => {
-    const existing = await ctx.db
+    const existingRows = await ctx.db
       .query("generatedImages")
       .withIndex("by_imageId", (q) => q.eq("imageId", args.imageId))
-      .unique();
+      .collect();
+    const existing = existingRows[0];
 
     if (existing) {
       // Delete storage file too
