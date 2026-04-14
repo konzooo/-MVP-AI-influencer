@@ -42,6 +42,42 @@ export const save = mutation({
   },
 });
 
+export const claimAutomationState = mutation({
+  args: {
+    postId: v.string(),
+    expectedStatus: v.string(),
+    expectedUpdatedAt: v.string(),
+    data: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("posts")
+      .withIndex("by_postId", (q) => q.eq("postId", args.postId))
+      .unique();
+
+    if (!existing) {
+      return { claimed: false };
+    }
+
+    let current: { status?: string; updatedAt?: string; [key: string]: unknown };
+    try {
+      current = JSON.parse(existing.data);
+    } catch {
+      return { claimed: false };
+    }
+
+    if (
+      current.status !== args.expectedStatus ||
+      current.updatedAt !== args.expectedUpdatedAt
+    ) {
+      return { claimed: false };
+    }
+
+    await ctx.db.patch(existing._id, { data: args.data });
+    return { claimed: true, data: args.data };
+  },
+});
+
 export const remove = mutation({
   args: { postId: v.string() },
   handler: async (ctx, args) => {

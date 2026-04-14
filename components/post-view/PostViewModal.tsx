@@ -2731,7 +2731,7 @@ export function PostViewModal({
                 )}
                 {post.status === "ready" && isRunningTaskOwnedPost && (
                   <div className="rounded border border-violet-900/60 bg-violet-950/20 px-3 py-2 text-xs text-violet-200">
-                    Automation will publish this post on a later runner tick while the task stays running.
+                    Automation will keep moving this post forward while the task stays running, including publishing as soon as the runner can complete it safely.
                   </div>
                 )}
                 {(isDraft || isApproved) && isRunningTaskOwnedPost && (

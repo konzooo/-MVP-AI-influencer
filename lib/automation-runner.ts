@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadPostsAsync, savePostAsync } from "./store-server";
+import { getConvexClient } from "./convex-client";
+import { api } from "@/convex/_generated/api";
 import {
   claimTaskRunAsync,
   computeNextRunAt,
@@ -37,6 +39,30 @@ async function recordTaskRunnerStatus(task: Task, error: string | null) {
   task.lastRunError = error;
   task.lastRunResultAt = new Date().toISOString();
   await saveTaskAsync(task);
+}
+
+async function claimPostState(
+  post: PostPlan,
+  nextPost: PostPlan
+): Promise<PostPlan | null> {
+  const claimedPost: PostPlan = {
+    ...nextPost,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const client = getConvexClient();
+  const result = await client.mutation(api.posts.claimAutomationState, {
+    postId: post.id,
+    expectedStatus: post.status,
+    expectedUpdatedAt: post.updatedAt,
+    data: JSON.stringify(claimedPost),
+  });
+
+  if (!result.claimed || !result.data) {
+    return null;
+  }
+
+  return JSON.parse(result.data) as PostPlan;
 }
 
 async function publishPost(post: PostPlan): Promise<{
@@ -184,7 +210,7 @@ function getDueTask(tasks: Task[]): Task | null {
 }
 
 async function processScheduledPublish(post: PostPlan) {
-  const publishingPost: PostPlan = {
+  const claimedPost = await claimPostState(post, {
     ...post,
     status: "publishing",
     publishingInfo: {
@@ -192,17 +218,23 @@ async function processScheduledPublish(post: PostPlan) {
       status: "publishing",
       error: undefined,
     },
-  };
-  await savePostAsync(publishingPost);
+  });
+  if (!claimedPost) {
+    return {
+      processed: false,
+      action: "scheduled_publish_claim_skipped",
+      postId: post.id,
+    };
+  }
 
-  const result = await publishPost(post);
+  const result = await publishPost(claimedPost);
 
   if (!result.success) {
     await savePostAsync({
-      ...post,
+      ...claimedPost,
       status: "ready",
       publishingInfo: {
-        ...post.publishingInfo,
+        ...claimedPost.publishingInfo,
         status: "failed",
         error: result.error || "Publishing failed",
       },
@@ -217,10 +249,10 @@ async function processScheduledPublish(post: PostPlan) {
   }
 
   await savePostAsync({
-    ...post,
+    ...claimedPost,
     status: "posted",
     publishingInfo: {
-      ...post.publishingInfo,
+      ...claimedPost.publishingInfo,
       status: "published",
       igPostId: result.igPostId,
       permalink: result.permalink,
@@ -242,34 +274,41 @@ async function processTaskLinkedPost(post: PostPlan, task: Task) {
     post.status === "approved" ||
     post.status === "generating"
   ) {
+    const claimedPost = await claimPostState(post, {
+      ...post,
+      status: "approved",
+    });
+    if (!claimedPost) {
+      return {
+        processed: false,
+        action: "task_post_generation_claim_skipped",
+        postId: post.id,
+      };
+    }
+
     let styleModeHint: string | undefined;
-    if (post.taskItemId) {
-      const item = task.inspirationItems.find((entry) => entry.id === post.taskItemId);
+    if (claimedPost.taskItemId) {
+      const item = task.inspirationItems.find((entry) => entry.id === claimedPost.taskItemId);
       if (item?.type === "from_scratch") {
         const fromScratchItem = item as FromScratchInspirationItem;
         styleModeHint = fromScratchItem.preferredStyleMode || undefined;
       }
     }
 
-    const generationPost: PostPlan = {
-      ...post,
-      status: "approved",
-    };
-
-    const result = await generatePostImages(generationPost, {
+    const result = await generatePostImages(claimedPost, {
       imageSize: task.defaultImageSize,
       styleModeHint,
     });
 
     const outcomeError =
-      generationPost.status === "generating" ? null : result.error;
+      claimedPost.status === "generating" ? null : result.error;
     await recordTaskRunnerStatus(task, outcomeError);
 
     return {
       processed: true,
       action: result.success
         ? "task_post_generated"
-        : generationPost.status === "generating"
+        : claimedPost.status === "generating"
           ? "task_post_generation_partial"
           : "task_post_generation_failed",
       postId: post.id,
@@ -277,7 +316,7 @@ async function processTaskLinkedPost(post: PostPlan, task: Task) {
     };
   }
 
-  const publishingPost: PostPlan = {
+  const claimedPost = await claimPostState(post, {
     ...post,
     status: "publishing",
     publishingInfo: {
@@ -285,17 +324,23 @@ async function processTaskLinkedPost(post: PostPlan, task: Task) {
       status: "publishing",
       error: undefined,
     },
-  };
-  await savePostAsync(publishingPost);
+  });
+  if (!claimedPost) {
+    return {
+      processed: false,
+      action: "task_post_publish_claim_skipped",
+      postId: post.id,
+    };
+  }
 
-  const result = await publishPost(post);
+  const result = await publishPost(claimedPost);
   if (!result.success) {
     const error = result.error || "Publishing failed";
     await savePostAsync({
-      ...post,
+      ...claimedPost,
       status: "ready",
       publishingInfo: {
-        ...post.publishingInfo,
+        ...claimedPost.publishingInfo,
         status: "failed",
         error,
       },
@@ -311,10 +356,10 @@ async function processTaskLinkedPost(post: PostPlan, task: Task) {
   }
 
   await savePostAsync({
-    ...post,
+    ...claimedPost,
     status: "posted",
     publishingInfo: {
-      ...post.publishingInfo,
+      ...claimedPost.publishingInfo,
       status: "published",
       igPostId: result.igPostId,
       permalink: result.permalink,
@@ -356,26 +401,61 @@ async function processDueTask(task: Task) {
 }
 
 export async function runAutomationTick() {
-  const [posts, tasks] = await Promise.all([loadPostsAsync(), loadTasksAsync()]);
+  const steps: Array<Record<string, unknown>> = [];
 
-  const scheduledPublish = findDueScheduledPublish(posts);
-  if (scheduledPublish) {
-    return processScheduledPublish(scheduledPublish);
+  for (let step = 0; step < 3; step += 1) {
+    const [posts, tasks] = await Promise.all([loadPostsAsync(), loadTasksAsync()]);
+
+    const scheduledPublish = findDueScheduledPublish(posts);
+    if (scheduledPublish) {
+      const result = await processScheduledPublish(scheduledPublish);
+      steps.push(result as Record<string, unknown>);
+      if (!result.processed || String(result.action).includes("failed")) {
+        break;
+      }
+      continue;
+    }
+
+    const taskPost = findAdvanceableTaskPost(posts, tasks);
+    if (taskPost) {
+      const result = await processTaskLinkedPost(taskPost.post, taskPost.task);
+      steps.push(result as Record<string, unknown>);
+      if (
+        !result.processed ||
+        result.action === "task_post_generation_partial" ||
+        String(result.action).includes("failed")
+      ) {
+        break;
+      }
+      continue;
+    }
+
+    const dueTask = getDueTask(tasks);
+    if (dueTask) {
+      const result = await processDueTask(dueTask);
+      steps.push(result as Record<string, unknown>);
+      if (!result.processed || String(result.action).includes("failed")) {
+        break;
+      }
+      continue;
+    }
+
+    break;
   }
 
-  const taskPost = findAdvanceableTaskPost(posts, tasks);
-  if (taskPost) {
-    return processTaskLinkedPost(taskPost.post, taskPost.task);
+  if (steps.length === 0) {
+    return {
+      processed: false,
+      action: "noop",
+      steps,
+    };
   }
 
-  const dueTask = getDueTask(tasks);
-  if (dueTask) {
-    return processDueTask(dueTask);
-  }
-
+  const lastStep = steps[steps.length - 1];
   return {
-    processed: false,
-    action: "noop",
+    ...lastStep,
+    processed: steps.some((step) => step.processed === true),
+    steps,
   };
 }
 
