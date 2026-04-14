@@ -2,13 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { api } from "@/convex/_generated/api";
 import { getConvexClient } from "@/lib/convex-client";
 
+async function loadGeneratedImageRow(imageId: string) {
+  const client = getConvexClient();
+
+  try {
+    return await client.query(api.generatedImages.get, { imageId });
+  } catch {
+    // Fall back to the list query in case the single-row lookup fails in Convex.
+    const rows = await client.query(api.generatedImages.list, {});
+    return rows.find((row) => row.imageId === imageId) ?? null;
+  }
+}
+
 async function loadStoredImage(imageId: string): Promise<{
   upstreamUrl: string;
   upstreamContentType: string;
   buffer: Buffer;
 }> {
   const client = getConvexClient();
-  const row = await client.query(api.generatedImages.get, { imageId });
+  const row = await loadGeneratedImageRow(imageId);
   if (!row) {
     throw new Error("Image not found");
   }

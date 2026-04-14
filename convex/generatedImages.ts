@@ -17,12 +17,8 @@ export const list = query({
 export const get = query({
   args: { imageId: v.string() },
   handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("generatedImages")
-      .withIndex("by_imageId", (q) => q.eq("imageId", args.imageId))
-      .collect();
-
-    return rows[0] ?? null;
+    const rows = await ctx.db.query("generatedImages").collect();
+    return rows.find((row) => row.imageId === args.imageId) ?? null;
   },
 });
 
