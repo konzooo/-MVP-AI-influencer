@@ -32,6 +32,7 @@ export interface Task {
   // Fallback configuration — used when inspiration queue is empty
   fallbackLocations: FallbackLocation[];
   fallbackNotes: string;
+  allowedStyleModes?: string[]; // Empty/undefined = all identity style modes allowed
 
   // Inspiration queue — own_image + copy_post items consumed in order
   inspirationItems: InspirationItem[];
@@ -91,6 +92,7 @@ export interface FromScratchInspirationItem extends InspirationItemBase {
   type: "from_scratch";
   preferredStyleMode: string | null;
   preferredLocation: string | null;
+  allowedStyleModes?: string[];
   postType: PostType;
 }
 

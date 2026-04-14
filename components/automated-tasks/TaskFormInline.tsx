@@ -32,6 +32,11 @@ const IMAGE_SIZE_OPTIONS = [
 
 export function TaskFormInline({ initialTask, onSave, onCancel }: TaskFormInlineProps) {
   const identity = loadIdentity();
+  const styleModeNames = identity.styleModes.map((mode) => mode.name);
+  const filteredInitialAllowedStyleModes =
+    initialTask?.allowedStyleModes?.filter((mode) => styleModeNames.includes(mode)) ?? [];
+  const initialAllowedStyleModes =
+    filteredInitialAllowedStyleModes.length > 0 ? filteredInitialAllowedStyleModes : styleModeNames;
 
   const [name, setName] = useState(initialTask?.name ?? "");
   const [description, setDescription] = useState(initialTask?.description ?? "");
@@ -39,6 +44,12 @@ export function TaskFormInline({ initialTask, onSave, onCancel }: TaskFormInline
   const [cadenceUnit, setCadenceUnit] = useState<"days" | "weeks">(initialTask?.cadence.unit ?? "days");
   const [defaultPostType, setDefaultPostType] = useState<PostType>(initialTask?.defaultPostType ?? "single_image");
   const [defaultImageSize, setDefaultImageSize] = useState(initialTask?.defaultImageSize ?? "portrait_4_3");
+  const [styleModeScope, setStyleModeScope] = useState<"all" | "specific">(
+    filteredInitialAllowedStyleModes.length > 0
+      ? "specific"
+      : "all"
+  );
+  const [allowedStyleModes, setAllowedStyleModes] = useState<string[]>(initialAllowedStyleModes);
   const [fallbackLocations, setFallbackLocations] = useState<FallbackLocation[]>(
     initialTask?.fallbackLocations ?? []
   );
@@ -69,8 +80,17 @@ export function TaskFormInline({ initialTask, onSave, onCancel }: TaskFormInline
     );
   };
 
+  const toggleStyleMode = (modeName: string) => {
+    setAllowedStyleModes((prev) =>
+      prev.includes(modeName)
+        ? prev.filter((mode) => mode !== modeName)
+        : [...prev, modeName]
+    );
+  };
+
   const handleSubmit = () => {
     if (!name.trim()) return;
+    if (styleModeScope === "specific" && allowedStyleModes.length === 0) return;
     onSave({
       name: name.trim(),
       description: description.trim(),
@@ -81,6 +101,10 @@ export function TaskFormInline({ initialTask, onSave, onCancel }: TaskFormInline
       defaultImageSize,
       fallbackLocations,
       fallbackNotes: fallbackNotes.trim(),
+      allowedStyleModes:
+        styleModeScope === "specific"
+          ? styleModeNames.filter((modeName) => allowedStyleModes.includes(modeName))
+          : [],
     });
   };
 
@@ -194,6 +218,67 @@ export function TaskFormInline({ initialTask, onSave, onCancel }: TaskFormInline
         </div>
       </div>
 
+      {/* Fallback style modes */}
+      <div className="border-t border-zinc-800 pt-6">
+        <label className="text-xs font-medium text-zinc-400">Fallback Style Modes</label>
+        <p className="mt-0.5 text-[10px] text-zinc-600">
+          Used only for from-scratch fallback posts when the queue is empty. The AI chooses from this set instead of a random style.
+        </p>
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => setStyleModeScope("all")}
+            className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+              styleModeScope === "all"
+                ? "bg-zinc-700 text-zinc-100"
+                : "bg-zinc-800 text-zinc-500 hover:bg-zinc-700"
+            }`}
+          >
+            All Style Modes
+          </button>
+          <button
+            onClick={() => setStyleModeScope("specific")}
+            className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+              styleModeScope === "specific"
+                ? "bg-zinc-700 text-zinc-100"
+                : "bg-zinc-800 text-zinc-500 hover:bg-zinc-700"
+            }`}
+          >
+            Choose Specific
+          </button>
+        </div>
+
+        {styleModeScope === "specific" && (
+          <>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {styleModeNames.map((modeName) => {
+                const selected = allowedStyleModes.includes(modeName);
+                return (
+                  <button
+                    key={modeName}
+                    onClick={() => toggleStyleMode(modeName)}
+                    className={`rounded px-2.5 py-1 text-xs transition-colors ${
+                      selected
+                        ? "bg-violet-900 text-violet-200"
+                        : "bg-zinc-800 text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300"
+                    }`}
+                  >
+                    {modeName}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[10px] text-zinc-600">
+              The LLM will see only these style modes, pick the best fit for the post idea, and stay within that lane.
+            </p>
+            {allowedStyleModes.length === 0 && (
+              <p className="mt-2 text-[11px] text-amber-400">
+                Pick at least one style mode.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
       {/* Fallback: Location weights */}
       <div className="border-t border-zinc-800 pt-6">
         <label className="text-xs font-medium text-zinc-400">Fallback Locations & Weights</label>
@@ -282,7 +367,7 @@ export function TaskFormInline({ initialTask, onSave, onCancel }: TaskFormInline
       <div className="flex items-center gap-3 border-t border-zinc-800 pt-6">
         <Button
           onClick={handleSubmit}
-          disabled={!name.trim()}
+          disabled={!name.trim() || (styleModeScope === "specific" && allowedStyleModes.length === 0)}
           className="bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50"
         >
           {isEditing ? "Save Changes" : "Create Task"}

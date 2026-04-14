@@ -111,6 +111,7 @@ function createLog(): ExecutionLog {
 
 type AIPlanPrompt = Partial<ImagePrompt>;
 type AIPlan = {
+  selectedStyleMode?: string;
   title?: string;
   description?: string;
   caption?: string;
@@ -122,6 +123,96 @@ type AIPlan = {
   storyTextOverlay?: string;
   storyLinkUrl?: string;
 };
+
+function getAllowedStyleModes(
+  task: Task,
+  identity: Awaited<ReturnType<typeof resolveIdentity>>
+): string[] {
+  const validModes = (task.allowedStyleModes || []).filter((modeName) =>
+    identity.styleModes.some((mode) => mode.name === modeName)
+  );
+  return validModes.length > 0
+    ? validModes
+    : identity.styleModes.map((mode) => mode.name);
+}
+
+function normalizeStyleModeName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function scoreStyleModeAgainstText(
+  mode: Awaited<ReturnType<typeof resolveIdentity>>["styleModes"][number],
+  text: string
+): number {
+  const haystack = text.toLowerCase();
+  const keywords = [
+    mode.name,
+    mode.description,
+    mode.mood,
+    ...mode.clothingExamples,
+    ...mode.typicalLocations,
+  ]
+    .join(" ")
+    .toLowerCase()
+    .split(/[\s,/&()-]+/)
+    .filter((token) => token.length > 3);
+
+  let score = 0;
+  for (const keyword of keywords) {
+    if (haystack.includes(keyword)) {
+      score += 1;
+    }
+  }
+
+  return score;
+}
+
+function resolveSelectedStyleMode(
+  selectedStyleMode: string | undefined,
+  allowedStyleModes: string[],
+  identity: Awaited<ReturnType<typeof resolveIdentity>>,
+  contextText: string
+): string | null {
+  const allowedModes = identity.styleModes.filter((mode) =>
+    allowedStyleModes.includes(mode.name)
+  );
+
+  if (allowedModes.length === 0) {
+    return null;
+  }
+
+  const normalizedSelection = selectedStyleMode
+    ? normalizeStyleModeName(selectedStyleMode)
+    : null;
+  if (normalizedSelection) {
+    const exactMatch = allowedModes.find(
+      (mode) => normalizeStyleModeName(mode.name) === normalizedSelection
+    );
+    if (exactMatch) {
+      return exactMatch.name;
+    }
+
+    const fuzzyMatch = allowedModes.find((mode) =>
+      normalizeStyleModeName(mode.name).includes(normalizedSelection)
+    );
+    if (fuzzyMatch) {
+      return fuzzyMatch.name;
+    }
+  }
+
+  const rankedModes = allowedModes
+    .map((mode) => ({
+      name: mode.name,
+      score: scoreStyleModeAgainstText(mode, contextText),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  if (rankedModes[0]?.score > 0) {
+    return rankedModes[0].name;
+  }
+
+  return allowedModes[0].name;
+}
 
 function normalizePrompt(prompt: AIPlanPrompt = {}): ImagePrompt {
   return {
@@ -720,10 +811,17 @@ export async function runTask(
     let post: PostPlan;
 
     const identity = await resolveIdentity();
-    const personaContext = identity.isActive
-      ? (await import("./identity")).buildPersonaContext(identity)
-      : undefined;
     const aiSettings = await resolveAISettings();
+    const allowedStyleModes =
+      selectedItem.type === "from_scratch"
+        ? getAllowedStyleModes(task, identity)
+        : [];
+    const personaContext = identity.isActive
+      ? (await import("./identity")).buildPersonaContext(identity, {
+          allowedStyleModes:
+            selectedItem.type === "from_scratch" ? allowedStyleModes : undefined,
+        })
+      : undefined;
 
     if (selectedItem.type === "own_image") {
       if (selectedItem.postType === "carousel") {
@@ -858,10 +956,7 @@ export async function runTask(
     } else {
       // from_scratch
       // POST /api/brainstorm (from_scratch mode)
-      const idea = buildFromScratchIdea(
-        selectedItem as FromScratchInspirationItem,
-        identity
-      );
+      const idea = buildFromScratchIdea(selectedItem as FromScratchInspirationItem);
       log.add(`Calling brainstorm API in from_scratch mode (using ${aiSettings.brainstormFromScratch})...`);
       const brainstormRes = await fetch(getInternalApiUrl("/api/brainstorm"), {
         method: "POST",
@@ -886,6 +981,33 @@ export async function runTask(
       const brainstormPlan = await brainstormRes.json();
       const usage = providerUsed === "claude" ? getLLMUsageFromHeaders(brainstormRes.headers) : undefined;
       await resolveRecordLLMCall(providerUsed, "brainstorm", usage?.cost ?? 0, usage);
+      const styleModeContext = [
+        selectedItem.notes,
+        selectedItem.type === "from_scratch" ? selectedItem.preferredLocation : "",
+        brainstormPlan.title,
+        brainstormPlan.description,
+        brainstormPlan.caption,
+      ]
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .join("\n");
+      const resolvedStyleMode = resolveSelectedStyleMode(
+        brainstormPlan.selectedStyleMode,
+        allowedStyleModes,
+        identity,
+        styleModeContext
+      );
+      (selectedItem as FromScratchInspirationItem).preferredStyleMode = resolvedStyleMode;
+      if (resolvedStyleMode) {
+        if (
+          brainstormPlan.selectedStyleMode &&
+          brainstormPlan.selectedStyleMode !== resolvedStyleMode
+        ) {
+          log.add(
+            `Adjusted style mode "${brainstormPlan.selectedStyleMode}" to "${resolvedStyleMode}" to stay within the allowed set`
+          );
+        }
+        log.add(`Selected style mode: ${resolvedStyleMode}`);
+      }
       post = createEmptyPost("from_scratch", selectedItem.postType);
       applyAiPlan(post, brainstormPlan as AIPlan);
       post.status = "approved";
@@ -963,32 +1085,23 @@ export async function runTask(
 
 async function synthesizeFromScratchItem(task: Task): Promise<FromScratchInspirationItem> {
   const identity = await resolveIdentity();
+  const allowedStyleModes = getAllowedStyleModes(task, identity);
 
-  // Pick style mode randomly from identity
-  const styleMode =
-    identity.styleModes[Math.floor(Math.random() * identity.styleModes.length)]?.name || null;
-
-  // Pick location using weighted selection from task config, or random from identity
+  // Pick location only from task-level fallback config when explicitly provided.
   let location: string | null = null;
   if (task.fallbackLocations && task.fallbackLocations.length > 0) {
     location = weightedRandomPick(task.fallbackLocations);
-  } else if (identity.preferredLocations.length > 0) {
-    location = identity.preferredLocations[Math.floor(Math.random() * identity.preferredLocations.length)];
   }
-
-  // Build notes from task's fallback notes
-  const notes = task.fallbackNotes
-    ? `${task.fallbackNotes}\n\nFallback: ${styleMode || "Auto"} at ${location || "Auto location"}`
-    : `Fallback: ${styleMode || "Auto"} at ${location || "Auto location"}`;
 
   return {
     id: `fallback-${Date.now()}`,
     type: "from_scratch",
     status: "pending",
-    notes,
+    notes: task.fallbackNotes.trim(),
     usedAt: null,
-    preferredStyleMode: styleMode,
+    preferredStyleMode: null,
     preferredLocation: location,
+    allowedStyleModes,
     postType: task.defaultPostType,
   };
 }
@@ -1007,24 +1120,24 @@ function weightedRandomPick(locations: Task["fallbackLocations"]): string {
   return locations[locations.length - 1].location;
 }
 
-function buildFromScratchIdea(
-  item: FromScratchInspirationItem,
-  identity: ReturnType<typeof loadIdentity>
-): string {
-  let idea = item.notes;
+function buildFromScratchIdea(item: FromScratchInspirationItem): string {
+  const sections: string[] = [];
 
-  if (item.preferredStyleMode) {
-    const styleMode = identity.styleModes.find((s) => s.name === item.preferredStyleMode);
-    if (styleMode) {
-      idea += `\n\nStyle: ${styleMode.description}`;
-    }
+  if (item.notes.trim()) {
+    sections.push(item.notes.trim());
+  }
+
+  if (item.allowedStyleModes && item.allowedStyleModes.length > 0) {
+    sections.push(
+      `Allowed style modes for this post: ${item.allowedStyleModes.join(", ")}. Choose the best fit and return it exactly in selectedStyleMode.`
+    );
   }
 
   if (item.preferredLocation) {
-    idea += `\n\nLocation: ${item.preferredLocation}`;
+    sections.push(`Preferred location/context: ${item.preferredLocation}`);
   }
 
-  return idea;
+  return sections.join("\n\n");
 }
 
 async function markItemUsed(task: Task, itemId: string): Promise<void> {

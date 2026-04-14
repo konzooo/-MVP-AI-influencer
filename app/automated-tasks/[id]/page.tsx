@@ -487,6 +487,25 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 </div>
               </div>
             )}
+            <div className="mt-3 border-t border-zinc-800 pt-3">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500 mb-2">
+                Fallback Style Modes
+              </p>
+              {task.allowedStyleModes && task.allowedStyleModes.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {task.allowedStyleModes.map((mode) => (
+                    <span
+                      key={mode}
+                      className="rounded bg-violet-950/40 px-2 py-0.5 text-[11px] text-violet-200"
+                    >
+                      {mode}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-zinc-400">All style modes are allowed for fallback posts.</p>
+              )}
+            </div>
             {task.fallbackNotes && (
               <div className="mt-2">
                 <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500 mb-1">

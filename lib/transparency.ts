@@ -57,7 +57,7 @@ export interface TransparencyData {
 }
 
 export const DEFAULT_TRANSPARENCY: TransparencyData = {
-  lastUpdated: "2026-03-13",
+  lastUpdated: "2026-04-14",
   geminiPrompts: {
     sharedPreamble: `You are an expert Instagram content strategist and creative director for an AI influencer account.
 
@@ -75,6 +75,11 @@ Your job is to take rough ideas and turn them into complete, actionable post pla
 
 The user will provide a rough idea (text) and optionally reference/inspiration images. Flesh it out into a compelling post concept.
 
+STYLE MODE REQUIREMENT:
+- If the persona context includes STYLE MODES, choose the single best-fitting style mode for this post concept
+- selectedStyleMode must exactly match one of the style mode names provided in persona context
+- Use the chosen style mode as a styling and mood lens, not as permission to override an explicit scene or trip brief
+
 IMPORTANT: The image generation prompt you write will be sent to an image generation model that supports multi-reference editing. When writing the prompt:
 - Do NOT include any model names (like "Seedream", "DALL-E", "Midjourney", etc.) in the prompt text itself
 - The user's character reference photo will be provided as "Figure 1" during image generation
@@ -82,6 +87,11 @@ IMPORTANT: The image generation prompt you write will be sent to an image genera
 - Reference the character as "the character from Figure 1"
 - Do NOT describe specific facial features, hair color, or other identity traits — the character reference handles that
 - Always describe the desired aesthetic and technical qualities (e.g. "professional photography, soft natural light, shallow depth of field")
+- When inventing a scene from scratch, make concrete decisions instead of leaving details vague: choose the exact setting, time of day, lighting source, background elements, outfit pieces, accessories, posture, hand placement, gaze/expression, framing, and any props or interactions
+- Build scenes with realism and internal logic: the outfit should fit the setting/weather, the pose should fit the mood and camera angle, the background should support the story, and the styling should feel intentional rather than random
+- Before finalizing, do a silent coherence pass and resolve any contradictions yourself so the final prompt feels like one believable photo, not a collage of cool ideas
+- For single-image posts and for carousel slide 1, write a fully specified "anchor" prompt that locks the scene clearly enough that the image model is not left to invent important details on its own
+- Avoid vague phrases like "stylish outfit", "nice background", or "good lighting" when you can specify what those actually are
 
 CAPTION REQUIREMENT:
 - If persona context includes a CAPTION STYLE section, treat it as the source of truth for the caption and follow it exactly
@@ -90,6 +100,7 @@ CAPTION REQUIREMENT:
 
 Return your response as valid JSON matching this exact structure:
 {
+  "selectedStyleMode": "Exact style mode name chosen from persona context",
   "title": "Descriptive title (e.g. 'Santorini rooftop, golden hour, flowy white dress')",
   "description": "1-2 sentence description of the post concept and visual",
   "caption": "The Instagram caption text (engaging, on-brand, with line breaks as \\n)",
@@ -103,6 +114,7 @@ Return your response as valid JSON matching this exact structure:
 }
 
 For carousels, generate exactly 3 imagePrompts (one per slide) that form a cohesive set.
+For carousels, imagePrompts[0] must be the authoritative master shot: rich, specific, and scene-locking. It should clearly define the environment, outfit, lighting, mood, pose, framing, and background details that the later slides will inherit.
 {{CAROUSEL_STYLE_INSTRUCTION}}
 For stories, keep captions short/punchy and note it's vertical 9:16 format.
 
@@ -137,6 +149,8 @@ The user will upload one or more images of posts they want to replicate. For EAC
    - Reference the character as "the character from Figure 1" (the user's character reference will be Figure 1 during generation)
    - Do NOT mention hair color, skin tone, facial features, eye color — the character reference handles all of that
    - End with photographic style cues (e.g. "shot on 35mm, shallow depth of field, slightly grainy, editorial feel")
+   - Fill in concrete scene details rather than vague placeholders so the prompt feels deliberate and realistic
+   - Do a silent coherence check before outputting: make sure pose, outfit, environment, props, lighting, and mood all belong in the same believable moment
 
 CAPTION REQUIREMENT:
 - If persona context includes a CAPTION STYLE section, treat it as the source of truth for the caption and follow it exactly
@@ -159,6 +173,7 @@ Return your response as valid JSON matching this exact structure:
 }
 
 For single images (single post or story), create one imagePrompt.
+If generating a carousel from a single source image, treat slide 1 as the anchor prompt that fully locks the scene and leaves as little ambiguity as possible for generation.
 For stories, note the vertical 9:16 format.
 
 {{COPY_POST_CAROUSEL_INSTRUCTION}}

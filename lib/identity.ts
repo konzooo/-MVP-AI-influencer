@@ -283,14 +283,30 @@ CAPTION RULES:
 - If the format is short-form (especially stories), keep the caption brief while still following the style.`;
 }
 
+interface PersonaContextOptions {
+  allowedStyleModes?: string[];
+}
+
 /**
  * Build a compact, LLM-friendly persona context string for Gemini injection
  */
-export function buildPersonaContext(identity: InfluencerIdentity): string {
-  const styleModesSummary = identity.styleModes
+export function buildPersonaContext(
+  identity: InfluencerIdentity,
+  options: PersonaContextOptions = {}
+): string {
+  const allowedStyleModes =
+    options.allowedStyleModes && options.allowedStyleModes.length > 0
+      ? new Set(options.allowedStyleModes)
+      : null;
+
+  const activeStyleModes = identity.styleModes.filter(
+    (mode) => !allowedStyleModes || allowedStyleModes.has(mode.name)
+  );
+
+  const styleModesSummary = activeStyleModes
     .map(
       (mode) =>
-        `- **${mode.name}**: ${mode.description} Clothing: ${mode.clothingExamples.join(", ")}. Locations: ${mode.typicalLocations.join(", ")}. Mood: ${mode.mood}. Avoid with: ${mode.avoidWith.join(", ")}.`
+        `- **${mode.name}**: ${mode.description} Clothing examples (illustrative, not exhaustive): ${mode.clothingExamples.join(", ")}. Mood: ${mode.mood}. Avoid with: ${mode.avoidWith.join(", ")}.`
     )
     .join("\n");
 
@@ -307,12 +323,16 @@ ${styleModesSummary}
 
 CONTENT THEMES: ${contentThemesSummary}
 
-LOCATION EXAMPLES: ${identity.locationExamples}
-
 ${buildCaptionStyleContext(identity)}
 
 VARIETY GUIDELINES (to prevent repetitive posts):
 ${varietyRules}
 
-IMPORTANT: When generating content, pick the most appropriate Style Mode for the context. Choose locations from PREFERRED LOCATIONS that fit the vibe. Any generated caption must follow the CAPTION STYLE section above. Image prompts should describe scene/location/style but NOT facial features (the character reference image handles appearance). Consider variety rules to avoid repetitive posts.`;
+IMPORTANT:
+- When generating content, pick the most appropriate Style Mode for the context from the STYLE MODES listed above.
+- Treat clothing examples as inspiration only. They are not exhaustive. Choose the final outfit based on the specific scene, weather, activity, and realism of the post.
+- Style modes should influence styling, mood, silhouette, and energy. They should not override an explicit travel brief, scene brief, or user-specified setting.
+- Any generated caption must follow the CAPTION STYLE section above.
+- Image prompts should describe scene/location/style but NOT facial features (the character reference image handles appearance).
+- Consider variety rules to avoid repetitive posts.`;
 }
