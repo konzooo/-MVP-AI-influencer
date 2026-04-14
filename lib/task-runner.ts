@@ -594,7 +594,11 @@ export async function generatePostImages(
  */
 export async function runTask(
   task: Task,
-  options?: { overrideItemId?: string; skipTaskLock?: boolean }
+  options?: {
+    overrideItemId?: string;
+    skipTaskLock?: boolean;
+    manualTrigger?: boolean;
+  }
 ): Promise<TaskRunResult> {
   const log = createLog();
   const result: TaskRunResult = {
@@ -605,14 +609,35 @@ export async function runTask(
     wasFallback: false,
     log: log.lines,
   };
+  const runStartedAt = new Date().toISOString();
+
+  const saveTaskOutcome = async (error: string | null) => {
+    task.lastRunError = error;
+    task.lastRunResultAt = new Date().toISOString();
+
+    if (options?.manualTrigger) {
+      task.lastRunAt = task.lastRunResultAt;
+    }
+
+    await resolveTaskSave(task);
+  };
+
+  const failTask = async (message: string) => {
+    result.error = message;
+    log.add(`ERROR: ${message}`);
+    await saveTaskOutcome(message);
+    return result;
+  };
 
   try {
     log.add(`Starting task: "${task.name}"`);
 
     if (options?.skipTaskLock) {
       log.add(`Task already locked: nextRunAt advanced to ${task.nextRunAt}`);
+    } else if (options?.manualTrigger) {
+      log.add("Manual extra run requested — schedule unchanged");
     } else {
-      const lastRunAt = new Date().toISOString();
+      const lastRunAt = runStartedAt;
       const nextRunAt = computeNextRunAt(task);
       const shouldClaimScheduledRun =
         task.status === "running" &&
@@ -646,8 +671,7 @@ export async function runTask(
       selectedItem =
         task.inspirationItems.find((i) => i.id === options.overrideItemId) || null;
       if (!selectedItem) {
-        result.error = `Item not found: ${options.overrideItemId}`;
-        return result;
+        return failTask(`Item not found: ${options.overrideItemId}`);
       }
       log.add(`Using override item: ${options.overrideItemId}`);
     } else {
@@ -675,8 +699,13 @@ export async function runTask(
           (p) => p.taskItemId === selectedItem!.id && p.taskId === task.id
         );
         if (duplicate) {
-          result.error = `Post already exists for item ${selectedItem.id} (post ${duplicate.id})`;
-          log.add(`SKIP: ${result.error}`);
+          await markItemUsed(task, selectedItem.id);
+          log.add(
+            `SKIP: post ${duplicate.id} already exists for item ${selectedItem.id}; marking queue item used`
+          );
+          result.success = true;
+          result.postId = duplicate.id;
+          await saveTaskOutcome(null);
           return result;
         }
       } catch (err) {
@@ -712,9 +741,7 @@ export async function runTask(
 
         if (!expandRes.ok) {
           const err = await readApiError(expandRes);
-          result.error = `Expand carousel failed: ${err}`;
-          log.add(`ERROR: ${result.error}`);
-          return result;
+          return failTask(`Expand carousel failed: ${err}`);
         }
 
         const providerUsed = (expandRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.expandCarousel;
@@ -765,9 +792,7 @@ export async function runTask(
 
         if (!analyzeRes.ok) {
           const err = await readApiError(analyzeRes);
-          result.error = `Analyze images failed: ${err}`;
-          log.add(`ERROR: ${result.error}`);
-          return result;
+          return failTask(`Analyze images failed: ${err}`);
         }
 
         const providerUsed = (analyzeRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.analyzeImages;
@@ -815,9 +840,7 @@ export async function runTask(
 
       if (!brainstormRes.ok) {
         const err = await readApiError(brainstormRes);
-        result.error = `Brainstorm failed: ${err}`;
-        log.add(`ERROR: ${result.error}`);
-        return result;
+        return failTask(`Brainstorm failed: ${err}`);
       }
 
       const providerUsed = (brainstormRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.brainstormCopyPost;
@@ -826,7 +849,7 @@ export async function runTask(
       await resolveRecordLLMCall(providerUsed, "brainstorm", usage?.cost ?? 0, usage);
       post = createEmptyPost("copy_post", selectedItem.postType);
       applyAiPlan(post, brainstormPlan as AIPlan);
-      post.status = "draft";
+      post.status = "approved";
       log.add(
         `Brainstorm complete (copy_post via ${providerUsed}): "${post.title}" with ${post.imagePrompts.length} prompts`
       );
@@ -854,9 +877,7 @@ export async function runTask(
 
       if (!brainstormRes.ok) {
         const err = await readApiError(brainstormRes);
-        result.error = `Brainstorm failed: ${err}`;
-        log.add(`ERROR: ${result.error}`);
-        return result;
+        return failTask(`Brainstorm failed: ${err}`);
       }
 
       const providerUsed = (brainstormRes.headers.get("x-ai-provider") as "gemini" | "claude" | null) ?? aiSettings.brainstormFromScratch;
@@ -865,7 +886,7 @@ export async function runTask(
       await resolveRecordLLMCall(providerUsed, "brainstorm", usage?.cost ?? 0, usage);
       post = createEmptyPost("from_scratch", selectedItem.postType);
       applyAiPlan(post, brainstormPlan as AIPlan);
-      post.status = "draft";
+      post.status = "approved";
       log.add(
         `Brainstorm complete (from_scratch via ${providerUsed}): "${post.title}" with ${post.imagePrompts.length} prompts`
       );
@@ -875,7 +896,6 @@ export async function runTask(
 
     post.taskId = task.id;
     post.taskItemId = selectedItem.id;
-    post.autoAdvance = task.approvalMode === "automatic";
 
     // Select and persist character reference at draft creation time
     // (so it stays consistent across modal opens and generation)
@@ -909,29 +929,28 @@ export async function runTask(
       }
     }
 
-    // ─── Step 5: Mark item used + save post early ─────────────────────────────
-    // Mark the inspiration item as consumed immediately so concurrent runs
-    // (cron re-fires, manual "Run Now") won't pick the same item again.
-
-    await markItemUsed(task, selectedItem.id);
+    // ─── Step 5: Save post first, then consume queue item ────────────────────
+    // taskItemId dedupe protects retries if the queue update fails.
     await savePostState(post);
-    log.add(`Item "${selectedItem.id}" marked used, post saved`);
+    await markItemUsed(task, selectedItem.id);
+    log.add(`Post saved, item "${selectedItem.id}" marked used`);
 
     // ─── Step 6: Done ─────────────────────────────────────────────────────────
-    // Draft created and saved. For automatic posts (autoAdvance=true), the
-    // cron will detect the post at approved/generating/ready status on
-    // subsequent ticks and advance it one step at a time.
+    // The unified automation runner advances task-linked posts one step at a
+    // time while the task remains running.
 
     log.add(`Post created at status "${post.status}"`);
-    log.add(`Next run scheduled: ${task.nextRunAt}`);
+    if (task.nextRunAt) {
+      log.add(`Next run scheduled: ${task.nextRunAt}`);
+    }
     result.success = true;
     result.postId = post.id;
+    await saveTaskOutcome(null);
     return result;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    result.error = msg;
     log.add(`EXCEPTION: ${msg}`);
-    return result;
+    return failTask(msg);
   }
 }
 

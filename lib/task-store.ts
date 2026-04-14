@@ -2,8 +2,8 @@ import { Task } from "./task-types";
 import { getConvexClient } from "./convex-client";
 import { api } from "@/convex/_generated/api";
 
-const TASKS_KEY = "ai-influencer-tasks";
 const TASKS_CACHE_KEY = "ai-influencer-tasks-cache";
+const TASKS_LEGACY_KEY = "ai-influencer-tasks";
 
 // ─── localStorage Cache (kept in sync by useTaskStore hook) ─────────────────
 
@@ -14,6 +14,7 @@ export function updateTasksCache(tasks: Task[]): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(TASKS_CACHE_KEY, JSON.stringify(tasks));
+    localStorage.removeItem(TASKS_LEGACY_KEY);
   } catch {
     // Ignore quota errors for cache
   }
@@ -22,18 +23,12 @@ export function updateTasksCache(tasks: Task[]): void {
 /**
  * Synchronous loadTasks — reads from localStorage cache.
  * The useTaskStore hook keeps this cache updated from Convex.
- * Falls back to the old localStorage key for pre-migration data.
  */
 export function loadTasks(): Task[] {
   if (typeof window === "undefined") return [];
   try {
     const cached = localStorage.getItem(TASKS_CACHE_KEY);
     if (cached) return JSON.parse(cached) as Task[];
-
-    // Fallback to old localStorage key (pre-migration)
-    const legacy = localStorage.getItem(TASKS_KEY);
-    if (legacy) return JSON.parse(legacy) as Task[];
-
     return [];
   } catch {
     return [];
@@ -70,11 +65,6 @@ export async function loadTasksAsync(): Promise<Task[]> {
 export async function getDueTasksAsync(): Promise<Task[]> {
   const tasks = await loadTasksAsync();
   const now = new Date();
-
-  // Debug: log all tasks so we can see why filtering fails
-  for (const t of tasks) {
-    console.log(`[getDueTasks] Task "${t.name}" status=${t.status} nextRunAt=${t.nextRunAt} now=${now.toISOString()} isDue=${t.nextRunAt ? new Date(t.nextRunAt) <= now : false}`);
-  }
 
   return tasks.filter(
     (t) => t.status === "running" && t.nextRunAt && new Date(t.nextRunAt) <= now
@@ -151,23 +141,24 @@ export function getDueTasks(): Task[] {
 
 /**
  * Compute next run time based on task cadence.
- * Prefers the previously scheduled timestamp so cadence advances stay stable
- * even when the task runs late or the server timezone differs from the user.
+ * Always returns the next future slot, so stale tasks do not backfill missed runs.
  */
 export function computeNextRunAt(task: Task): string {
+  const now = new Date();
   const baseTimestamp = task.nextRunAt ?? task.lastRunAt;
   const next = new Date(baseTimestamp ?? new Date().toISOString());
 
-  if (task.cadence.unit === "days") {
-    next.setDate(next.getDate() + task.cadence.every);
-  } else {
-    next.setDate(next.getDate() + task.cadence.every * 7);
-  }
-
-  // Only fall back to scheduledTime when there is no prior scheduled timestamp.
   if (!baseTimestamp && task.scheduledTime) {
     const [hours, minutes] = task.scheduledTime.split(":").map(Number);
     next.setHours(hours, minutes, 0, 0);
+  }
+
+  while (next <= now) {
+    if (task.cadence.unit === "days") {
+      next.setDate(next.getDate() + task.cadence.every);
+    } else {
+      next.setDate(next.getDate() + task.cadence.every * 7);
+    }
   }
 
   return next.toISOString();

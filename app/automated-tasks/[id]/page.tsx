@@ -8,13 +8,17 @@ import { Card } from "@/components/ui/card";
 import { Plus, Play, Pause, RotateCcw, Pencil, Trash2 } from "lucide-react";
 import { useTaskStore } from "@/hooks/use-task-store";
 import { usePostStore } from "@/hooks/use-post-store";
-import { Task, InspirationItem } from "@/lib/task-types";
+import { Task, TaskEditableFields, InspirationItem } from "@/lib/task-types";
 import { runTask } from "@/lib/task-runner";
 import { TaskFormInline } from "@/components/automated-tasks/TaskFormInline";
 import { AddItemDialog } from "@/components/automated-tasks/AddItemDialog";
 import { InspirationQueue } from "@/components/automated-tasks/InspirationQueue";
 import { TaskRunLog } from "@/components/automated-tasks/TaskRunLog";
 import { PostViewModal } from "@/components/post-view/PostViewModal";
+import { detachTaskPostForTaskDeletion, isTaskPostUnfinished } from "@/lib/automation-posts";
+import { getConvexClient } from "@/lib/convex-client";
+import { api } from "@/convex/_generated/api";
+import { savePostAsync } from "@/lib/store";
 
 type RunStatus = "idle" | "running" | "done" | "error";
 
@@ -77,7 +81,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const router = useRouter();
 
-  const { getTask, updateTask, deleteTask: removeTask } = useTaskStore();
+  const { getTask, updateTask } = useTaskStore();
   const { posts, deletePost } = usePostStore();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -105,7 +109,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   // ─── Task CRUD ──────────────────────────────────────────────────────────────
 
   const handleUpdateTask = (
-    fields: Omit<Task, "id" | "createdAt" | "updatedAt" | "lastRunAt" | "nextRunAt" | "inspirationItems">
+    fields: TaskEditableFields
   ) => {
     const scheduledRun = getScheduledRunDate();
     if (!scheduledRun) return;
@@ -123,11 +127,32 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     toast.success("Task updated");
   };
 
-  const handleDeleteTask = () => {
-    if (!window.confirm("Are you sure you want to delete this task? This cannot be undone.")) return;
-    removeTask(task.id);
-    toast.success("Task deleted");
-    router.push("/automated-tasks");
+  const handleDeleteTask = async () => {
+    if (
+      !window.confirm(
+        "Delete this task? Unfinished task posts will become normal manual posts, and posted posts will stay as history."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const client = getConvexClient();
+      const unfinishedTaskPosts = taskPosts.filter(isTaskPostUnfinished);
+
+      for (const post of unfinishedTaskPosts) {
+        const detached = detachTaskPostForTaskDeletion(post);
+        await savePostAsync(detached);
+      }
+
+      await client.mutation(api.tasks.remove, { taskId: task.id });
+      toast.success("Task deleted and unfinished posts detached");
+      router.push("/automated-tasks");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to delete task"
+      );
+    }
   };
 
   // ─── Inspiration items ───────────────────────────────────────────────────────
@@ -226,7 +251,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     setRunStatus("running");
     setRunLog([]);
 
-    const result = await runTask(t);
+    const result = await runTask(t, { manualTrigger: true });
 
     setRunLog(result.log);
     setRunStatus(result.success ? "done" : "error");
@@ -381,15 +406,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 </span>
               </div>
               <div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Approval</p>
-                <span
-                  className={`mt-1 inline-block rounded px-2 py-0.5 text-xs font-medium ${
-                    task.approvalMode === "manual"
-                      ? "bg-violet-950 text-violet-400"
-                      : "bg-blue-950 text-blue-400"
-                  }`}
-                >
-                  {task.approvalMode}
+                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Automation</p>
+                <span className="mt-1 inline-block rounded bg-violet-950 px-2 py-0.5 text-xs font-medium text-violet-300">
+                  Full auto
                 </span>
               </div>
               <div>
@@ -422,7 +441,24 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                     : "\u2014"}
                 </p>
               </div>
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Latest Runner Result</p>
+                <p className="mt-1 text-zinc-200">
+                  {task.lastRunResultAt
+                    ? new Date(task.lastRunResultAt).toLocaleString()
+                    : "No runner activity yet"}
+                </p>
+              </div>
             </div>
+            {task.lastRunError ? (
+              <div className="mt-3 rounded border border-red-900/60 bg-red-950/20 px-3 py-2 text-xs text-red-300">
+                Latest runner issue: {task.lastRunError}
+              </div>
+            ) : task.lastRunResultAt ? (
+              <div className="mt-3 rounded border border-emerald-900/50 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-300">
+                Latest runner result completed without a task-level error.
+              </div>
+            ) : null}
             {task.description && (
               <p className="mt-3 border-t border-zinc-800 pt-3 text-sm text-zinc-400">
                 {task.description}

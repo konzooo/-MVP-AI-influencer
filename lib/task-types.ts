@@ -1,6 +1,5 @@
 import { PostType } from "./types";
 
-export type TaskApprovalMode = "manual" | "automatic";
 export type TaskStatus = "running" | "paused" | "archived";
 export type InspirationItemType = "own_image" | "copy_post" | "from_scratch";
 export type InspirationItemStatus = "pending" | "used" | "skipped";
@@ -16,9 +15,6 @@ export interface Task {
 
   // running = active scheduler; paused = scheduler stopped; archived = hidden
   status: TaskStatus;
-
-  // Approval & automation
-  approvalMode: TaskApprovalMode;
 
   // How often to post
   cadence: {
@@ -45,7 +41,21 @@ export interface Task {
   updatedAt: string;
   lastRunAt: string | null;
   nextRunAt: string | null;     // next scheduled run; null when paused
+  lastRunError?: string | null;
+  lastRunResultAt?: string | null;
 }
+
+export type TaskEditableFields = Omit<
+  Task,
+  | "id"
+  | "createdAt"
+  | "updatedAt"
+  | "lastRunAt"
+  | "nextRunAt"
+  | "lastRunError"
+  | "lastRunResultAt"
+  | "inspirationItems"
+>;
 
 // ─── Fallback Location ───────────────────────────────────────────────────────
 

@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { PostPlan } from "@/lib/types";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
+import { normalizeGeneratedImageUrl } from "@/lib/automation-posts";
 import {
   ImageIcon,
   Zap,
@@ -51,6 +53,28 @@ interface PostListProps {
   isCreating?: boolean;
 }
 
+function PostThumbnail({ thumbnail }: { thumbnail?: string }) {
+  const [imageError, setImageError] = useState(false);
+  const normalizedThumbnail = normalizeGeneratedImageUrl(thumbnail);
+
+  return (
+    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md border border-zinc-800 bg-zinc-900">
+      {normalizedThumbnail && !imageError ? (
+        <img
+          src={normalizedThumbnail}
+          alt=""
+          className="h-full w-full object-cover"
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center">
+          <ImageIcon className="h-4 w-4 text-zinc-700" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PostList({ posts, onPostClick, isCreating }: PostListProps) {
   if (posts.length === 0 && !isCreating) {
     return (
@@ -90,19 +114,10 @@ export function PostList({ posts, onPostClick, isCreating }: PostListProps) {
             className="flex cursor-pointer items-center gap-3 rounded-lg border border-transparent bg-zinc-900/30 px-3 py-2.5 transition-colors hover:border-zinc-800 hover:bg-zinc-900/60"
           >
             {/* Thumbnail */}
-            <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md border border-zinc-800 bg-zinc-900">
-              {thumbnail ? (
-                <img
-                  src={thumbnail}
-                  alt=""
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center">
-                  <ImageIcon className="h-4 w-4 text-zinc-700" />
-                </div>
-              )}
-            </div>
+            <PostThumbnail
+              key={normalizeGeneratedImageUrl(thumbnail) || `${post.id}-empty`}
+              thumbnail={thumbnail}
+            />
 
             {/* Title + metadata */}
             <div className="min-w-0 flex-1">

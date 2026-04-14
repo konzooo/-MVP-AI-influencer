@@ -1,7 +1,6 @@
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { getConvexClient } from "./convex-client";
-import { getPublicAppBaseUrl } from "./app-url";
 
 export function buildGeneratedImageUrl(
   imageId: string,
@@ -9,14 +8,14 @@ export function buildGeneratedImageUrl(
 ): string {
   const url = new URL(
     `/api/generated-images/${encodeURIComponent(imageId)}`,
-    getPublicAppBaseUrl()
+    "http://local.generated.image"
   );
 
   if (variant !== "original") {
     url.searchParams.set("variant", variant);
   }
 
-  return url.toString();
+  return `${url.pathname}${url.search}`;
 }
 
 export async function persistGeneratedImageFromFal(params: {

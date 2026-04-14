@@ -42,7 +42,7 @@ async function callCronEndpoint(path: string, label: string): Promise<void> {
  */
 export const checkDueTasks = internalAction({
   handler: async () => {
-    await callCronEndpoint("/api/run-due-tasks", "TaskRunner");
+    await callCronEndpoint("/api/run-automation", "TaskRunner");
   },
 });
 
@@ -52,17 +52,17 @@ export const checkDueTasks = internalAction({
  */
 export const checkDuePosts = internalAction({
   handler: async () => {
-    await callCronEndpoint("/api/run-due-posts", "PostRunner");
+    await callCronEndpoint("/api/run-automation", "PostRunner");
   },
 });
 
 /**
  * Internal action called by the Convex cron.
- * Advances one autoAdvance post one step (generate or publish).
+ * Legacy compatibility entrypoint. The unified automation runner now handles
+ * scheduling, task-created posts, and due publishes in one place.
  */
 export const advancePosts = internalAction({
   handler: async () => {
-    await callCronEndpoint("/api/advance-posts", "AdvancePosts");
+    await callCronEndpoint("/api/run-automation", "AdvancePosts");
   },
 });
-

@@ -1,68 +1,7 @@
-import { NextResponse } from "next/server";
-import {
-  claimTaskRunAsync,
-  computeNextRunAt,
-  getDueTasksAsync,
-} from "@/lib/task-store";
+import { handleAutomationRunRequest } from "@/lib/automation-runner";
 
-export const maxDuration = 60; // Vercel Hobby max — carousel pipelines may exceed this; claimRun prevents duplicate runs on timeout
+export const maxDuration = 60;
 
-/**
- * POST /api/run-due-tasks
- *
- * Cron endpoint — triggers all tasks whose nextRunAt is in the past.
- * Called by Convex cron (every minute) or manually.
- *
- * Optional header: Authorization: Bearer <CRON_SECRET>
- * Set CRON_SECRET env var to protect the endpoint.
- */
 export async function POST(request: Request) {
-  // Optional bearer-token auth
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = request.headers.get("authorization") ?? "";
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
-
-  const dueTasks = await getDueTasksAsync();
-
-  if (dueTasks.length === 0) {
-    return NextResponse.json({ ran: 0, results: [] });
-  }
-
-  const results: { taskId: string; taskName: string; success: boolean; error: string | null }[] = [];
-
-  for (const task of dueTasks) {
-    const lastRunAt = new Date().toISOString();
-    const nextRunAt = computeNextRunAt(task);
-    const claimedTask = await claimTaskRunAsync(task, { lastRunAt, nextRunAt });
-
-    if (!claimedTask) {
-      continue;
-    }
-
-    try {
-      // Dynamically import to avoid edge-runtime issues
-      const { runTask } = await import("@/lib/task-runner");
-      const result = await runTask(claimedTask, { skipTaskLock: true });
-
-      results.push({
-        taskId: claimedTask.id,
-        taskName: claimedTask.name,
-        success: result.success,
-        error: result.error,
-      });
-    } catch (err) {
-      results.push({
-        taskId: claimedTask.id,
-        taskName: claimedTask.name,
-        success: false,
-        error: err instanceof Error ? err.message : "Unknown error",
-      });
-    }
-  }
-
-  return NextResponse.json({ ran: results.length, results });
+  return handleAutomationRunRequest(request);
 }

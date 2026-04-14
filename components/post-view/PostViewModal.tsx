@@ -7,6 +7,7 @@ import { Task } from "@/lib/task-types";
 import { deletePost, loadPosts, savePost } from "@/lib/store";
 import { usePostActions } from "@/hooks/use-post-actions";
 import { useInstagramAccount } from "@/hooks/use-instagram-account";
+import { useTaskStore } from "@/hooks/use-task-store";
 import { canPublish as checkRateLimit } from "@/lib/instagram-rate-limit";
 import {
   Dialog,
@@ -610,6 +611,7 @@ export function PostViewModal({
 
   const actions = usePostActions();
   const instagram = useInstagramAccount();
+  const { getTask } = useTaskStore();
 
   // ─── Load post ──────────────────────────────────────────────────────────────
 
@@ -1289,6 +1291,14 @@ export function PostViewModal({
   const isManualPost = post.creationMode === "manual";
   const isOwnImageCarousel =
     post.creationMode === "from_own_images" && post.postType === "carousel";
+  const owningTask =
+    post.taskId
+      ? task?.id === post.taskId
+        ? task
+        : getTask(post.taskId) ?? null
+      : null;
+  const isRunningTaskOwnedPost =
+    !!post.taskId && owningTask?.status === "running";
 
   // Publishing validation
   const selectedImages = post.generatedImages.filter((i) => i.selected);
@@ -1312,7 +1322,7 @@ export function PostViewModal({
   const canSubmitPublish = canPublishNow && (!isScheduled || !!scheduledDate);
 
   // Resolve inspiration item from task
-  const inspirationItem = task?.inspirationItems.find(
+  const inspirationItem = owningTask?.inspirationItems.find(
     (i) => i.id === post.taskItemId
   );
   let sourceImages: string[] = [];
@@ -1417,7 +1427,9 @@ export function PostViewModal({
               </div>
               <StatusBadge
                 status={post.status}
-                onStatusChange={handleStatusChange}
+                onStatusChange={
+                  isRunningTaskOwnedPost ? undefined : handleStatusChange
+                }
               />
             </DialogTitle>
             <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -1453,6 +1465,20 @@ export function PostViewModal({
           </DialogHeader>
 
           <div className="space-y-5 pb-2">
+            {post.taskId && (
+              <div
+                className={`rounded-lg border px-3 py-2 text-xs ${
+                  isRunningTaskOwnedPost
+                    ? "border-violet-900/70 bg-violet-950/20 text-violet-200"
+                    : "border-zinc-800 bg-zinc-900/40 text-zinc-400"
+                }`}
+              >
+                {isRunningTaskOwnedPost
+                  ? "This post is being managed by a running task. Publish and schedule controls are hidden until that task is paused or removed."
+                  : "This post is no longer attached to a running task, so you can manage it manually."}
+              </div>
+            )}
+
             {/* ── Section: Creative Brief ───────────────────────────── */}
             <div className="space-y-3">
               {(post.description || canEdit) && (
@@ -2409,6 +2435,7 @@ export function PostViewModal({
 
             {/* ── Section: Publishing ───────────────────────────────── */}
             {post.status === "ready" &&
+              !isRunningTaskOwnedPost &&
               !actions.isPublishing && (
                 <>
                   <Separator className="bg-zinc-800" />
@@ -2649,7 +2676,7 @@ export function PostViewModal({
               </div>
 
               <div className="flex items-center gap-2">
-                {isDraft && (
+                {isDraft && !isRunningTaskOwnedPost && (
                   <Button
                     onClick={handleApproveAndGenerate}
                     disabled={actions.isGenerating || (requiresReferenceSelection && selectedRefs.length === 0)}
@@ -2660,7 +2687,7 @@ export function PostViewModal({
                     Approve & Generate
                   </Button>
                 )}
-                {isApproved && (
+                {isApproved && !isRunningTaskOwnedPost && (
                   <Button
                     onClick={handleApproveAndGenerate}
                     disabled={actions.isGenerating || (requiresReferenceSelection && selectedRefs.length === 0)}
@@ -2690,7 +2717,7 @@ export function PostViewModal({
                     </Button>
                   </>
                 )}
-                {post.status === "ready" && (
+                {post.status === "ready" && !isRunningTaskOwnedPost && (
                   <Button
                     onClick={handlePublish}
                     disabled={!canSubmitPublish}
@@ -2701,6 +2728,16 @@ export function PostViewModal({
                       ? `Schedule for ${scheduledDate.toLocaleDateString()}`
                       : "Publish to Instagram"}
                   </Button>
+                )}
+                {post.status === "ready" && isRunningTaskOwnedPost && (
+                  <div className="rounded border border-violet-900/60 bg-violet-950/20 px-3 py-2 text-xs text-violet-200">
+                    Automation will publish this post on a later runner tick while the task stays running.
+                  </div>
+                )}
+                {(isDraft || isApproved) && isRunningTaskOwnedPost && (
+                  <div className="rounded border border-violet-900/60 bg-violet-950/20 px-3 py-2 text-xs text-violet-200">
+                    Automation will continue this post on a later runner tick while the task stays running.
+                  </div>
                 )}
                 <Button
                   size="sm"

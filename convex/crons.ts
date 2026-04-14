@@ -4,21 +4,9 @@ import { internal } from "./_generated/api";
 const crons = cronJobs();
 
 crons.interval(
-  "run-due-tasks",
+  "run-automation",
   { minutes: 1 },
   internal.taskRunner.checkDueTasks
-);
-
-crons.interval(
-  "run-due-posts",
-  { minutes: 1 },
-  internal.taskRunner.checkDuePosts
-);
-
-crons.interval(
-  "advance-posts",
-  { minutes: 1 },
-  internal.taskRunner.advancePosts
 );
 
 export default crons;

@@ -27,21 +27,17 @@ export function TaskCard({ task }: TaskCardProps) {
             >
               {task.status}
             </span>
-            <span
-              className={`text-xs px-2 py-0.5 rounded font-medium ${
-                task.approvalMode === "manual"
-                  ? "bg-violet-950 text-violet-400"
-                  : "bg-blue-950 text-blue-400"
-              }`}
-            >
-              {task.approvalMode}
-            </span>
           </div>
           <p className="mt-1 text-sm text-zinc-400">
             Every {task.cadence.every} {task.cadence.unit}
             {pendingCount > 0 && ` \u00B7 ${pendingCount} items queued`}
             {task.lastRunAt && ` \u00B7 Last run: ${new Date(task.lastRunAt).toLocaleString()}`}
           </p>
+          {task.lastRunError && (
+            <p className="mt-1 text-xs text-red-400">
+              Latest runner issue: {task.lastRunError}
+            </p>
+          )}
           {task.nextRunAt && (
             <p className="mt-1 text-xs text-zinc-500">
               Next run: {new Date(task.nextRunAt).toLocaleString()}{" "}

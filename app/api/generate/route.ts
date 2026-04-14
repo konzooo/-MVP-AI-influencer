@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateWithSeedream } from "@/lib/fal";
 import { persistGeneratedImageFromFal } from "@/lib/generated-image-storage";
 
+function normalizeImageUrl(request: NextRequest, url: string): string {
+  if (!url) return url;
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url;
+  }
+
+  if (url.startsWith("/")) {
+    return new URL(url, request.url).toString();
+  }
+
+  return url;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const apiKey = process.env.FAL_KEY;
@@ -43,7 +56,9 @@ export async function POST(request: NextRequest) {
     const result = await generateWithSeedream(
       {
         prompt,
-        imageUrls,
+        imageUrls: Array.isArray(imageUrls)
+          ? imageUrls.map((url: string) => normalizeImageUrl(request, url))
+          : [],
         imageSize,
         numImages,
         maxImages,

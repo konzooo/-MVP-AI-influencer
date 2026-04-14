@@ -3,16 +3,14 @@
 import { useRouter } from "next/navigation";
 import { TaskFormInline } from "@/components/automated-tasks/TaskFormInline";
 import { useTaskStore } from "@/hooks/use-task-store";
-import { Task } from "@/lib/task-types";
+import { Task, TaskEditableFields } from "@/lib/task-types";
 import { toast } from "sonner";
 
 export default function NewTaskPage() {
   const router = useRouter();
   const { updateTask } = useTaskStore();
 
-  const handleCreate = (
-    fields: Omit<Task, "id" | "createdAt" | "updatedAt" | "lastRunAt" | "nextRunAt" | "inspirationItems">
-  ) => {
+  const handleCreate = (fields: TaskEditableFields) => {
     const now = new Date().toISOString();
     const newTask: Task = {
       ...fields,
@@ -22,6 +20,8 @@ export default function NewTaskPage() {
       updatedAt: now,
       lastRunAt: null,
       nextRunAt: null,
+      lastRunError: null,
+      lastRunResultAt: null,
     };
     updateTask(newTask);
     toast.success(`Task "${newTask.name}" created`);

@@ -101,7 +101,6 @@ export interface PostPlan {
   // Automated Tasks — links this post to a task
   taskId?: string;        // Which task created this post
   taskItemId?: string;    // Which inspiration item was used
-  autoAdvance?: boolean;  // true = created by automation in automatic mode; advancer will process this post
 
   // Character reference — selected once at draft creation, used at generation
   selectedCharacterRefId?: string;    // Reference library image ID (legacy single)

@@ -11,14 +11,14 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Task, TaskApprovalMode, TaskStatus } from "@/lib/task-types";
+import { Task, TaskEditableFields, TaskStatus } from "@/lib/task-types";
 import { PostType } from "@/lib/types";
 
 interface TaskFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialTask?: Task;
-  onSave: (task: Omit<Task, "id" | "createdAt" | "updatedAt" | "lastRunAt" | "nextRunAt" | "inspirationItems">) => void;
+  onSave: (task: TaskEditableFields) => void;
 }
 
 const POST_TYPE_OPTIONS: { value: PostType; label: string }[] = [
@@ -40,7 +40,6 @@ export function TaskForm({ open, onOpenChange, initialTask, onSave }: TaskFormPr
   const [name, setName] = useState(initialTask?.name ?? "");
   const [description, setDescription] = useState(initialTask?.description ?? "");
   const [status, setStatus] = useState<TaskStatus>(initialTask?.status ?? "paused");
-  const [approvalMode, setApprovalMode] = useState<TaskApprovalMode>(initialTask?.approvalMode ?? "manual");
   const [cadenceEvery, setCadenceEvery] = useState(initialTask?.cadence.every ?? 1);
   const [cadenceUnit, setCadenceUnit] = useState<"days" | "weeks">(initialTask?.cadence.unit ?? "days");
   const [defaultPostType, setDefaultPostType] = useState<PostType>(initialTask?.defaultPostType ?? "single_image");
@@ -55,7 +54,6 @@ export function TaskForm({ open, onOpenChange, initialTask, onSave }: TaskFormPr
       description: description.trim(),
       status,
       scheduledTime: initialTask?.scheduledTime ?? null,
-      approvalMode,
       cadence: { every: cadenceEvery, unit: cadenceUnit },
       defaultPostType,
       defaultImageSize,
@@ -98,7 +96,7 @@ export function TaskForm({ open, onOpenChange, initialTask, onSave }: TaskFormPr
             />
           </div>
 
-          {/* Status + Approval mode */}
+          {/* Status + automation mode */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-zinc-400">Status</label>
@@ -122,29 +120,13 @@ export function TaskForm({ open, onOpenChange, initialTask, onSave }: TaskFormPr
             </div>
 
             <div>
-              <label className="text-xs font-medium text-zinc-400">Approval Mode</label>
-              <div className="mt-1 flex gap-2">
-                {(["manual", "automatic"] as TaskApprovalMode[]).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setApprovalMode(m)}
-                    className={`flex-1 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                      approvalMode === m
-                        ? m === "manual"
-                          ? "bg-violet-900 text-violet-300"
-                          : "bg-blue-900 text-blue-300"
-                        : "bg-zinc-800 text-zinc-500 hover:bg-zinc-700"
-                    }`}
-                  >
-                    {m.charAt(0).toUpperCase() + m.slice(1)}
-                  </button>
-                ))}
+              <label className="text-xs font-medium text-zinc-400">Automation</label>
+              <div className="mt-1 rounded border border-zinc-800 bg-zinc-900/50 px-3 py-2">
+                <p className="text-xs font-medium text-zinc-200">Full Auto</p>
+                <p className="mt-1 text-[10px] text-zinc-500">
+                  Tasks create posts on schedule and the unified runner handles generation and publishing automatically.
+                </p>
               </div>
-              <p className="mt-1 text-[10px] text-zinc-600">
-                {approvalMode === "manual"
-                  ? "You approve each step manually"
-                  : "Full pipeline runs automatically"}
-              </p>
             </div>
           </div>
 
