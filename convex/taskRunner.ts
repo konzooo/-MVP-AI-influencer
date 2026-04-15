@@ -1,7 +1,10 @@
 import { internalAction } from "./_generated/server";
 
 async function callCronEndpoint(path: string, label: string): Promise<void> {
-  const appUrl = process.env.APP_URL;
+  const appUrl =
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_BASE_URL;
   if (!appUrl) {
     console.log(`[${label}] APP_URL env var not set, skipping`);
     return;
