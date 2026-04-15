@@ -69,6 +69,32 @@ async function buildResponse(
       });
     }
 
+    if (variant === "thumbnail") {
+      const sharp = (await import("sharp")).default;
+      const thumbnail = await sharp(buffer)
+        .resize({
+          width: 220,
+          height: 220,
+          fit: "cover",
+          position: "attention",
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 72 })
+        .toBuffer();
+
+      return new NextResponse(
+        method === "HEAD" ? null : (thumbnail as unknown as BodyInit),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "image/webp",
+            "Content-Length": String(thumbnail.length),
+            "Cache-Control": "public, max-age=31536000, immutable",
+          },
+        }
+      );
+    }
+
     return new NextResponse(method === "HEAD" ? null : buffer as unknown as BodyInit, {
       status: 200,
       headers: {

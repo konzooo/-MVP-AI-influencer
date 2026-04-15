@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import { loadReferenceImages } from "@/lib/reference-image-library";
+import { buildConvexReferenceImageUrl } from "@/lib/reference-image-storage";
 import type { ReferenceImage } from "@/lib/types";
 
 const DEFAULT_METADATA = {
@@ -24,46 +25,49 @@ export async function GET() {
       const rows = await client.query(api.referenceImages.list);
 
       if (rows.length > 0) {
-        // Get storage URLs for all images
-        const images: ReferenceImage[] = await Promise.all(
-          rows.map(async (row) => {
-            const mainUrl = await client.query(api.imageStorage.getUrl, {
-              storageId: row.storageId,
-            });
-            const thumbUrl = row.thumbnailStorageId
-              ? await client.query(api.imageStorage.getUrl, {
-                  storageId: row.thumbnailStorageId,
-                })
-              : mainUrl;
+        const images: ReferenceImage[] = rows.map((row) => {
+          let metadata = DEFAULT_METADATA;
+          try {
+            const parsed = JSON.parse(row.metadata);
+            metadata = { ...DEFAULT_METADATA, ...parsed };
+          } catch {
+            // Use defaults
+          }
 
-            let metadata = DEFAULT_METADATA;
-            try {
-              const parsed = JSON.parse(row.metadata);
-              metadata = { ...DEFAULT_METADATA, ...parsed };
-            } catch {
-              // Use defaults
-            }
+          const referenceUrl = buildConvexReferenceImageUrl(
+            row.imageId,
+            "reference",
+            row.storageId
+          );
+          const thumbnailUrl = buildConvexReferenceImageUrl(
+            row.imageId,
+            "thumbnail",
+            row.thumbnailStorageId ?? row.storageId
+          );
 
-            const url = mainUrl || "";
-            const thumb = thumbUrl || url;
+          return {
+            id: row.imageId,
+            sourceKey: row.sourceKey as ReferenceImage["sourceKey"],
+            filename: row.filename,
+            imagePath: referenceUrl,
+            originalPath: referenceUrl,
+            referencePath: referenceUrl,
+            thumbnailPath: thumbnailUrl,
+            summary: row.summary,
+            tags: row.tags,
+            metadata,
+            createdAt: row.createdAt,
+          };
+        });
 
-            return {
-              id: row.imageId,
-              sourceKey: row.sourceKey as ReferenceImage["sourceKey"],
-              filename: row.filename,
-              imagePath: url,
-              originalPath: url,
-              referencePath: url,
-              thumbnailPath: thumb,
-              summary: row.summary,
-              tags: row.tags,
-              metadata,
-              createdAt: row.createdAt,
-            };
-          })
+        return NextResponse.json(
+          { images, total: images.length },
+          {
+            headers: {
+              "Cache-Control": "public, max-age=60, stale-while-revalidate=300",
+            },
+          }
         );
-
-        return NextResponse.json({ images, total: images.length });
       }
     } catch (error) {
       console.error(
@@ -76,7 +80,14 @@ export async function GET() {
   // Fallback: filesystem (pre-migration)
   try {
     const images = await loadReferenceImages();
-    return NextResponse.json({ images, total: images.length });
+    return NextResponse.json(
+      { images, total: images.length },
+      {
+        headers: {
+          "Cache-Control": "public, max-age=60, stale-while-revalidate=300",
+        },
+      }
+    );
   } catch (error) {
     console.error("Failed to load reference images:", error);
     return NextResponse.json(

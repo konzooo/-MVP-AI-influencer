@@ -34,8 +34,9 @@ async function normalizeUploadSource(
 
   const sourceBuffer = Buffer.from(await response.arrayBuffer());
   const isReferenceSizedLibraryAsset =
-    sourceUrl.includes("/api/reference-images/source/") &&
-    sourceUrl.includes("variant=reference");
+    sourceUrl.includes("variant=reference") &&
+    (sourceUrl.includes("/api/reference-images/source/") ||
+      sourceUrl.includes("/api/reference-images/convex/"));
 
   if (isReferenceSizedLibraryAsset) {
     return `data:${response.headers.get("content-type") || "image/jpeg"};base64,${sourceBuffer.toString("base64")}`;

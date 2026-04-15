@@ -4,7 +4,7 @@ import { getConvexClient } from "./convex-client";
 
 export function buildGeneratedImageUrl(
   imageId: string,
-  variant: "original" | "publish" = "original"
+  variant: "original" | "thumbnail" | "publish" = "original"
 ): string {
   const url = new URL(
     `/api/generated-images/${encodeURIComponent(imageId)}`,

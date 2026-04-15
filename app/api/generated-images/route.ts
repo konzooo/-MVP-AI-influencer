@@ -57,6 +57,7 @@ export async function GET() {
 
     const images: ReferenceImage[] = rows.map((row) => {
       const imagePath = buildGeneratedImageUrl(row.imageId);
+      const thumbnailPath = buildGeneratedImageUrl(row.imageId, "thumbnail");
       return {
         id: row.imageId,
         sourceKey: "generated",
@@ -64,7 +65,7 @@ export async function GET() {
         imagePath,
         originalPath: imagePath,
         referencePath: imagePath,
-        thumbnailPath: imagePath,
+        thumbnailPath,
         summary: row.prompt || "Saved fal.ai output",
         tags: buildTags(row.prompt || "", row.postTitle),
         metadata: GENERATED_IMAGE_METADATA,
@@ -73,7 +74,14 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ images, total: images.length });
+    return NextResponse.json(
+      { images, total: images.length },
+      {
+        headers: {
+          "Cache-Control": "public, max-age=60, stale-while-revalidate=300",
+        },
+      }
+    );
   } catch (error) {
     console.error("Failed to load generated images:", error);
     return NextResponse.json(
