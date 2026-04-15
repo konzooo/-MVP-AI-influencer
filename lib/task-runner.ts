@@ -368,6 +368,7 @@ async function readApiError(response: Response): Promise<string> {
 export interface GeneratePostResult {
   success: boolean;
   error: string | null;
+  deferred?: boolean;
   log: string[];
 }
 
@@ -377,11 +378,39 @@ export async function generatePostImages(
     imageSize: string;
     styleModeHint?: string;
     signal?: AbortSignal;
+    automationTimeBudgetMs?: number;
   }
 ): Promise<GeneratePostResult> {
   const log = createLog();
   const result: GeneratePostResult = { success: false, error: null, log: log.lines };
   let lastPromptFailure: string | null = null;
+  const automationStartedAt = Date.now();
+  const automationDeadlineAt = options.automationTimeBudgetMs
+    ? automationStartedAt + options.automationTimeBudgetMs
+    : null;
+  const AUTOMATION_PAUSE_REASON = "automation_time_budget";
+  const MIN_TIME_TO_START_GENERATION_MS = 20_000;
+
+  const getRemainingAutomationBudgetMs = () =>
+    automationDeadlineAt === null ? null : automationDeadlineAt - Date.now();
+
+  const isAutomationPauseSignal = (signal?: AbortSignal | null) =>
+    !!signal &&
+    signal.aborted &&
+    (signal.reason === AUTOMATION_PAUSE_REASON ||
+      String(signal.reason || "").includes(AUTOMATION_PAUSE_REASON));
+
+  const pauseForAutomationBudget = async (
+    message: string
+  ): Promise<GeneratePostResult> => {
+    result.error = message;
+    result.deferred = true;
+    post.status = "generating";
+    post.generationError = undefined;
+    await savePostState(post);
+    log.add(`PAUSED: ${message}`);
+    return result;
+  };
 
   const failGeneration = async (message: string): Promise<GeneratePostResult> => {
     result.error = message;
@@ -472,6 +501,16 @@ export async function generatePostImages(
     let slide0GeneratedUrl: string | null = null;
 
     for (let promptIdx = 0; promptIdx < post.imagePrompts.length; promptIdx++) {
+      const remainingBudgetMs = getRemainingAutomationBudgetMs();
+      if (
+        remainingBudgetMs !== null &&
+        remainingBudgetMs < MIN_TIME_TO_START_GENERATION_MS
+      ) {
+        return pauseForAutomationBudget(
+          "Generation paused to stay within the automation time budget"
+        );
+      }
+
       // Check for cancellation
       if (options.signal?.aborted) {
         result.error = "Generation stopped by user";
@@ -547,7 +586,25 @@ export async function generatePostImages(
         }
       }
 
+      let generationTimeoutController: AbortController | null = null;
+      let generationTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
       try {
+        generationTimeoutController =
+          remainingBudgetMs === null ? null : new AbortController();
+        generationTimeoutId =
+          generationTimeoutController === null
+            ? null
+            : setTimeout(() => {
+                generationTimeoutController?.abort(AUTOMATION_PAUSE_REASON);
+              }, Math.max(remainingBudgetMs - 2_000, 1_000));
+        const generationSignal =
+          generationTimeoutController === null
+            ? options.signal
+            : AbortSignal.any([
+                ...(options.signal ? [options.signal] : []),
+                generationTimeoutController.signal,
+              ]);
         const generateRes = await fetch(getInternalApiUrl("/api/generate"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -561,8 +618,11 @@ export async function generatePostImages(
             postTitle: post.title,
             promptIndex: promptIdx,
           }),
-          signal: options.signal,
+          signal: generationSignal,
         });
+        if (generationTimeoutId !== null) {
+          clearTimeout(generationTimeoutId);
+        }
 
         if (!generateRes.ok) {
           const err = await readApiError(generateRes);
@@ -610,6 +670,14 @@ export async function generatePostImages(
         // Save after each image so the UI can poll progress
         await savePostState(post);
       } catch (err) {
+        if (generationTimeoutId !== null) {
+          clearTimeout(generationTimeoutId);
+        }
+        if (isAutomationPauseSignal(generationTimeoutController?.signal)) {
+          return pauseForAutomationBudget(
+            "Generation paused to stay within the automation time budget"
+          );
+        }
         // If aborted, stop immediately and reset to draft
         if (err instanceof DOMException && err.name === "AbortError") {
           result.error = "Generation stopped by user";
@@ -667,6 +735,11 @@ export async function generatePostImages(
   } catch (err) {
     // Handle abort at top level too
     if (err instanceof DOMException && err.name === "AbortError") {
+      if (isAutomationPauseSignal(options.signal)) {
+        return pauseForAutomationBudget(
+          "Generation paused to stay within the automation time budget"
+        );
+      }
       result.error = "Generation stopped by user";
       log.add("Generation stopped by user");
       post.status = "draft";

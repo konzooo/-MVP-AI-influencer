@@ -23,6 +23,9 @@ const TASK_POST_STATUS_PRIORITY: Record<PostPlan["status"], number> = {
   posted: 99,
 };
 
+const MAX_AUTOMATION_STEPS_PER_TICK = 1;
+const AUTOMATION_GENERATION_TIME_BUDGET_MS = 45_000;
+
 function getInternalApiBaseUrl(): string {
   return (
     process.env.APP_URL ||
@@ -298,17 +301,18 @@ async function processTaskLinkedPost(post: PostPlan, task: Task) {
     const result = await generatePostImages(claimedPost, {
       imageSize: task.defaultImageSize,
       styleModeHint,
+      automationTimeBudgetMs: AUTOMATION_GENERATION_TIME_BUDGET_MS,
     });
 
     const outcomeError =
-      claimedPost.status === "generating" ? null : result.error;
+      claimedPost.status === "generating" || result.deferred ? null : result.error;
     await recordTaskRunnerStatus(task, outcomeError);
 
     return {
       processed: true,
       action: result.success
         ? "task_post_generated"
-        : claimedPost.status === "generating"
+        : claimedPost.status === "generating" || result.deferred
           ? "task_post_generation_partial"
           : "task_post_generation_failed",
       postId: post.id,
@@ -403,7 +407,7 @@ async function processDueTask(task: Task) {
 export async function runAutomationTick() {
   const steps: Array<Record<string, unknown>> = [];
 
-  for (let step = 0; step < 3; step += 1) {
+  for (let step = 0; step < MAX_AUTOMATION_STEPS_PER_TICK; step += 1) {
     const [posts, tasks] = await Promise.all([loadPostsAsync(), loadTasksAsync()]);
 
     const scheduledPublish = findDueScheduledPublish(posts);
