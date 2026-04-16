@@ -5,7 +5,7 @@ import { savePost } from "./store";
 import { loadIdentity, buildPersonaContext } from "./identity";
 import { loadAISettings, type AIProvider, type CarouselStyle } from "./ai-settings";
 import {
-  selectCharacterReference,
+  selectCharacterReferences,
   buildContextFromKeywords,
   getSelectableCharacterReferences,
 } from "./reference-selector";
@@ -109,12 +109,18 @@ export async function brainstormPost(params: {
           const refContext = buildContextFromKeywords(
             [newPost.title, newPost.description, newPost.caption].filter(Boolean).join(" ")
           );
-          const charRef = selectCharacterReference(selectableRefs, refContext);
-          if (charRef) {
-            newPost.selectedCharacterRefId = charRef.id;
-            newPost.selectedCharacterRefPath = charRef.referencePath;
-            newPost.characterRefs = [{ id: charRef.id, path: charRef.referencePath }];
-            console.log("[brainstormPost] Smart-selected character reference:", charRef.id);
+          const charRefs = selectCharacterReferences(selectableRefs, refContext, 3);
+          if (charRefs.length > 0) {
+            newPost.selectedCharacterRefId = charRefs[0].id;
+            newPost.selectedCharacterRefPath = charRefs[0].referencePath;
+            newPost.characterRefs = charRefs.map((ref) => ({
+              id: ref.id,
+              path: ref.referencePath,
+            }));
+            console.log(
+              "[brainstormPost] Smart-selected character references:",
+              charRefs.map((ref) => ref.id).join(", ")
+            );
           }
         } else {
           console.warn("[brainstormPost] No face_reference images available for auto-selection");

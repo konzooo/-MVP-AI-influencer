@@ -30,7 +30,7 @@ import {
   computeNextRunAt,
 } from "./task-store";
 import {
-  selectCharacterReference,
+  selectCharacterReferences,
   buildContextFromStyleMode,
   buildContextFromKeywords,
   getSelectableCharacterReferences,
@@ -461,20 +461,23 @@ export async function generatePostImages(
         refContext = buildContextFromStyleMode(options.styleModeHint);
       }
 
-      const charRef = selectCharacterReference(selectableRefs, refContext);
-      if (!charRef) {
+      const charRefs = selectCharacterReferences(selectableRefs, refContext, 3);
+      if (charRefs.length === 0) {
         return failGeneration("Failed to select a face-reference image");
       }
 
-      charRefPaths = [{ id: charRef.id, path: charRef.referencePath }];
+      charRefPaths = charRefs.map((ref) => ({
+        id: ref.id,
+        path: ref.referencePath,
+      }));
 
       // Persist selection on the post so it's stable for future runs
-      post.selectedCharacterRefId = charRef.id;
-      post.selectedCharacterRefPath = charRef.referencePath;
+      post.selectedCharacterRefId = charRefs[0].id;
+      post.selectedCharacterRefPath = charRefs[0].referencePath;
       post.characterRefs = charRefPaths;
       await savePostState(post);
 
-      log.add(`Selected character reference: ${charRef.id}`);
+      log.add(`Selected character references: ${charRefPaths.map((ref) => ref.id).join(", ")}`);
     }
 
     // Upload character references to fal storage (skipped for own-image posts)
@@ -1113,12 +1116,17 @@ export async function runTask(
             } else {
               refContext = buildContextFromKeywords([post.title, post.description, post.caption].filter(Boolean).join(" "));
             }
-            const charRef = selectCharacterReference(selectableRefs, refContext);
-            if (charRef) {
-              post.selectedCharacterRefId = charRef.id;
-              post.selectedCharacterRefPath = charRef.referencePath;
-              post.characterRefs = [{ id: charRef.id, path: charRef.referencePath }];
-              log.add(`Character reference selected: ${charRef.id}`);
+            const charRefs = selectCharacterReferences(selectableRefs, refContext, 3);
+            if (charRefs.length > 0) {
+              post.selectedCharacterRefId = charRefs[0].id;
+              post.selectedCharacterRefPath = charRefs[0].referencePath;
+              post.characterRefs = charRefs.map((ref) => ({
+                id: ref.id,
+                path: ref.referencePath,
+              }));
+              log.add(
+                `Character references selected: ${charRefs.map((ref) => ref.id).join(", ")}`
+              );
             }
           } else {
             log.add("WARNING: No face_reference images available for automatic selection");

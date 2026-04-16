@@ -79,6 +79,40 @@ export function getSelectableCharacterReferences(
   return references.filter(isFaceReference);
 }
 
+function pickPrimaryCharacterReference(
+  eligibleReferences: ReferenceImage[],
+  context: ReferenceMatchContext
+): ReferenceImage | null {
+  if (eligibleReferences.length === 0) return null;
+
+  const scored = eligibleReferences.map((ref) => ({
+    ref,
+    score: scoreReference(ref, context),
+  }));
+
+  scored.sort((a, b) => b.score - a.score);
+
+  const maxScore = scored[0].score;
+
+  if (maxScore === 0) {
+    return eligibleReferences[Math.floor(Math.random() * eligibleReferences.length)];
+  }
+
+  const topTier = scored.filter((s) => s.score >= maxScore - 1);
+  return topTier[Math.floor(Math.random() * topTier.length)].ref;
+}
+
+function shuffleReferences(references: ReferenceImage[]): ReferenceImage[] {
+  const shuffled = [...references];
+
+  for (let index = shuffled.length - 1; index > 0; index--) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+
+  return shuffled;
+}
+
 /**
  * Select the best character reference from the library for the given context
  *
@@ -94,25 +128,33 @@ export function selectCharacterReference(
   context: ReferenceMatchContext
 ): ReferenceImage | null {
   const eligibleReferences = getSelectableCharacterReferences(references);
-  if (eligibleReferences.length === 0) return null;
+  return pickPrimaryCharacterReference(eligibleReferences, context);
+}
 
-  const scored = eligibleReferences.map((ref) => ({
-    ref,
-    score: scoreReference(ref, context),
-  }));
+/**
+ * Select up to N different character references.
+ *
+ * Strategy:
+ * 1. Pick the primary anchor using the existing context-aware scoring logic
+ * 2. Fill the remaining slots with different face-tagged references in random order
+ * 3. Keep the primary anchor first so prompt references still map cleanly to Figure 1
+ */
+export function selectCharacterReferences(
+  references: ReferenceImage[],
+  context: ReferenceMatchContext,
+  count = 3
+): ReferenceImage[] {
+  const eligibleReferences = getSelectableCharacterReferences(references);
+  if (eligibleReferences.length === 0 || count <= 0) return [];
 
-  scored.sort((a, b) => b.score - a.score);
+  const primaryReference = pickPrimaryCharacterReference(eligibleReferences, context);
+  if (!primaryReference) return [];
 
-  const maxScore = scored[0].score;
+  const remainingReferences = shuffleReferences(
+    eligibleReferences.filter((ref) => ref.id !== primaryReference.id)
+  );
 
-  // If all scores are 0, pick randomly from eligible references
-  if (maxScore === 0) {
-    return eligibleReferences[Math.floor(Math.random() * eligibleReferences.length)];
-  }
-
-  // Among top scorers (within 1 point of max), pick randomly
-  const topTier = scored.filter((s) => s.score >= maxScore - 1);
-  return topTier[Math.floor(Math.random() * topTier.length)].ref;
+  return [primaryReference, ...remainingReferences].slice(0, count);
 }
 
 /**
